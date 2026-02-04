@@ -1,0 +1,11 @@
+{
+  "name": "pub-fight",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "cd server && npm start",
+    "dev": "cd server && npm run dev",
+    "build": "cd client && npm run build && mkdir -p ../server/public && cp -r dist/* ../server/public/",
+    "install:all": "cd server && npm install && cd ../client && npm install"
+  }
+}
