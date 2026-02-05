@@ -1,0 +1,10 @@
+import { SkillNode, CharacterClass } from '../types/game.js';
+import { TANK_SKILLS } from './tank.js';
+import { WIZARD_SKILLS } from './wizard.js';
+import { ALCHEMIST_SKILLS } from './alchemist.js';
+import { WARRIOR_SKILLS } from './warrior.js';
+export declare const ALL_SKILLS: SkillNode[];
+export declare const SKILLS_BY_CLASS: Record<CharacterClass, SkillNode[]>;
+export declare function getSkillById(id: string): SkillNode | undefined;
+export declare function getSkillsByClass(characterClass: CharacterClass): SkillNode[];
+export { TANK_SKILLS, WIZARD_SKILLS, ALCHEMIST_SKILLS, WARRIOR_SKILLS };

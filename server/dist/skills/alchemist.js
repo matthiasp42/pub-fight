@@ -1,0 +1,172 @@
+export const ALCHEMIST_SKILLS = [
+    // Level 1
+    {
+        id: 'healing_potion',
+        name: 'Healing Potion',
+        description: 'Heal target 12 HP.',
+        class: 'alchemist',
+        levelRequired: 1,
+        type: 'ability',
+        ability: {
+            cost: 2,
+            targetType: 'manual',
+            hits: 1,
+            effects: [{ type: 'heal', amount: 12 }],
+            selfEffects: [],
+        },
+    },
+    {
+        id: 'energize',
+        name: 'Energize',
+        description: 'Target ally gains 3 AP.',
+        class: 'alchemist',
+        levelRequired: 1,
+        type: 'ability',
+        ability: {
+            cost: 2,
+            targetType: 'manual',
+            hits: 1,
+            effects: [{ type: 'modifyAP', amount: 3 }],
+            selfEffects: [],
+        },
+    },
+    {
+        id: 'brew_mastery',
+        name: 'Brew Mastery',
+        description: 'Potions heal +4 extra.',
+        class: 'alchemist',
+        levelRequired: 1,
+        type: 'passive',
+        passive: {
+            trigger: 'always',
+            effect: { type: 'modifyDamage', amount: 4 }, // applies to heals too
+        },
+    },
+    // Level 3
+    {
+        id: 'mass_heal',
+        name: 'Mass Heal',
+        description: 'Heal all party 8 HP.',
+        class: 'alchemist',
+        levelRequired: 3,
+        requires: 'healing_potion',
+        type: 'ability',
+        ability: {
+            cost: 4,
+            targetType: 'allParty',
+            hits: 1,
+            effects: [{ type: 'heal', amount: 8 }],
+            selfEffects: [],
+        },
+    },
+    {
+        id: 'adrenaline_shot',
+        name: 'Adrenaline Shot',
+        description: 'Target ally gains 5 AP, takes 5 damage.',
+        class: 'alchemist',
+        levelRequired: 3,
+        requires: 'energize',
+        type: 'ability',
+        ability: {
+            cost: 2,
+            targetType: 'manual',
+            hits: 1,
+            effects: [
+                { type: 'modifyAP', amount: 5 },
+                { type: 'damage', amount: 5 },
+            ],
+            selfEffects: [],
+        },
+    },
+    {
+        id: 'toxic_coating',
+        name: 'Toxic Coating',
+        description: 'Your attacks poison: 3 damage/turn for 2 turns.',
+        class: 'alchemist',
+        levelRequired: 3,
+        type: 'passive',
+        passive: {
+            trigger: 'onHit',
+            effect: { type: 'modifyDamage', amount: 3 }, // simplified poison effect
+        },
+    },
+    // Level 5
+    {
+        id: 'elixir_of_life',
+        name: 'Elixir of Life',
+        description: 'Revive knocked out ally with 25% HP.',
+        class: 'alchemist',
+        levelRequired: 5,
+        requires: 'mass_heal',
+        type: 'ability',
+        ability: {
+            cost: 5,
+            targetType: 'manual',
+            hits: 1,
+            effects: [{ type: 'heal', amount: 0 }], // special revive effect
+            selfEffects: [],
+        },
+    },
+    {
+        id: 'haste_potion',
+        name: 'Haste Potion',
+        description: 'All party gain 2 AP.',
+        class: 'alchemist',
+        levelRequired: 5,
+        requires: 'adrenaline_shot',
+        type: 'ability',
+        ability: {
+            cost: 4,
+            targetType: 'allParty',
+            hits: 1,
+            effects: [{ type: 'modifyAP', amount: 2 }],
+            selfEffects: [],
+        },
+    },
+    {
+        id: 'acid_flask',
+        name: 'Acid Flask',
+        description: '15 damage, piercing.',
+        class: 'alchemist',
+        levelRequired: 5,
+        requires: 'toxic_coating',
+        type: 'ability',
+        ability: {
+            cost: 3,
+            targetType: 'manual',
+            hits: 1,
+            effects: [{ type: 'damage', amount: 15, piercing: true }],
+            selfEffects: [],
+        },
+    },
+    // Level 7
+    {
+        id: 'panacea',
+        name: 'Panacea',
+        description: 'Full heal one target.',
+        class: 'alchemist',
+        levelRequired: 7,
+        requires: 'elixir_of_life',
+        type: 'ability',
+        ability: {
+            cost: 5,
+            targetType: 'manual',
+            hits: 1,
+            effects: [{ type: 'heal', amount: 999 }], // max heal
+            selfEffects: [],
+        },
+    },
+    {
+        id: 'philosophers_stone',
+        name: "Philosopher's Stone",
+        description: 'Start each fight with +3 AP.',
+        class: 'alchemist',
+        levelRequired: 7,
+        requires: 'haste_potion',
+        type: 'passive',
+        passive: {
+            trigger: 'onFightStart',
+            effect: { type: 'modifyMaxAP', amount: 3 },
+        },
+    },
+];

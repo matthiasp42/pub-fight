@@ -66,5 +66,15 @@ export const api = {
       body: JSON.stringify(state)
     });
     return res.json();
+  },
+
+  async getSkills(characterClass = null) {
+    const url = characterClass
+      ? `${API_BASE}/skills/${characterClass}`
+      : `${API_BASE}/skills`;
+    // Skills are public - no auth needed
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Failed to fetch skills');
+    return res.json();
   }
 };
