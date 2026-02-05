@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useLayoutEffect, useCallback } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -53,11 +53,68 @@ export function SkillTreeDialog({
 }) {
   const { skills, loading, error, getSkillsByLevel, getSkillStatus } = useSkills();
   const [selectedSkill, setSelectedSkill] = useState(null);
+  const [connectorPaths, setConnectorPaths] = useState([]);
+  const skillRefs = useRef({});
+  const containerRef = useRef(null);
 
   const skillsByLevel = useMemo(() => {
     if (!characterClass) return { 1: [], 3: [], 5: [], 7: [] };
     return getSkillsByLevel(characterClass);
   }, [characterClass, getSkillsByLevel]);
+
+  // Calculate connector paths after render
+  const calculateConnectors = useCallback(() => {
+    if (!containerRef.current) return;
+
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const paths = [];
+
+    // For each skill with a 'requires' field, draw a connector
+    Object.values(skillsByLevel).flat().forEach(skill => {
+      if (skill.requires && skillRefs.current[skill.id] && skillRefs.current[skill.requires]) {
+        const childEl = skillRefs.current[skill.id];
+        const parentEl = skillRefs.current[skill.requires];
+
+        const childRect = childEl.getBoundingClientRect();
+        const parentRect = parentEl.getBoundingClientRect();
+
+        // Calculate positions relative to container
+        const childX = childRect.left + childRect.width / 2 - containerRect.left;
+        const childY = childRect.top - containerRect.top;
+        const parentX = parentRect.left + parentRect.width / 2 - containerRect.left;
+        const parentY = parentRect.bottom - containerRect.top;
+
+        // Create a curved path from parent (bottom) to child (top)
+        const midY = (parentY + childY) / 2;
+        const path = `M ${parentX} ${parentY} C ${parentX} ${midY}, ${childX} ${midY}, ${childX} ${childY}`;
+
+        paths.push({
+          id: `${skill.requires}-${skill.id}`,
+          path,
+          parentId: skill.requires,
+          childId: skill.id,
+        });
+      }
+    });
+
+    setConnectorPaths(paths);
+  }, [skillsByLevel]);
+
+  // Recalculate connectors when dialog opens or skills change
+  useLayoutEffect(() => {
+    if (open && !loading) {
+      // Small delay to ensure DOM is fully rendered
+      const timer = setTimeout(calculateConnectors, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [open, loading, skillsByLevel, calculateConnectors]);
+
+  // Register a skill node ref
+  const setSkillRef = useCallback((skillId, element) => {
+    if (element) {
+      skillRefs.current[skillId] = element;
+    }
+  }, []);
 
   const handleSkillClick = (skill) => {
     const status = getSkillStatus(skill, characterLevel, ownedSkillIds);
@@ -73,27 +130,25 @@ export function SkillTreeDialog({
     setSelectedSkill(null);
   };
 
-  const renderSkillColumn = (level, levelSkills) => {
+  const renderLevelRow = (level, levelSkills) => {
     const isLevelUnlocked = characterLevel >= level;
 
     return (
       <Box
         key={level}
         sx={{
-          flex: 1,
-          minWidth: 150,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          p: 1,
-          borderRight: level < 7 ? '1px solid rgba(255,255,255,0.1)' : 'none',
+          py: 2,
+          borderBottom: level < 7 ? '1px solid rgba(255,255,255,0.1)' : 'none',
           opacity: isLevelUnlocked ? 1 : 0.5,
         }}
       >
         <Typography
           variant="subtitle2"
           sx={{
-            mb: 1,
+            mb: 1.5,
             color: isLevelUnlocked ? CLASS_COLORS[characterClass] : 'text.disabled',
             fontWeight: 'bold',
           }}
@@ -103,19 +158,24 @@ export function SkillTreeDialog({
         <Box
           sx={{
             display: 'flex',
-            flexDirection: 'column',
-            gap: 1,
-            alignItems: 'center',
+            flexDirection: 'row',
+            gap: 2,
+            justifyContent: 'center',
+            flexWrap: 'wrap',
           }}
         >
           {levelSkills.map((skill) => (
-            <SkillNodeCard
+            <Box
               key={skill.id}
-              skill={skill}
-              status={getSkillStatus(skill, characterLevel, ownedSkillIds)}
-              onClick={() => handleSkillClick(skill)}
-              compact
-            />
+              ref={(el) => setSkillRef(skill.id, el)}
+            >
+              <SkillNodeCard
+                skill={skill}
+                status={getSkillStatus(skill, characterLevel, ownedSkillIds)}
+                onClick={() => handleSkillClick(skill)}
+                compact
+              />
+            </Box>
           ))}
         </Box>
       </Box>
@@ -190,18 +250,47 @@ export function SkillTreeDialog({
               </Box>
             </Box>
 
-            {/* Skill Tree Grid */}
+            {/* Skill Tree Grid - Vertical Layout */}
             <Box
+              ref={containerRef}
               sx={{
+                position: 'relative',
                 display: 'flex',
-                flexDirection: 'row',
+                flexDirection: 'column',
                 border: '1px solid rgba(255,255,255,0.1)',
                 borderRadius: 1,
                 overflow: 'hidden',
                 backgroundColor: 'rgba(0,0,0,0.2)',
               }}
             >
-              {[1, 3, 5, 7].map((level) => renderSkillColumn(level, skillsByLevel[level]))}
+              {/* SVG Connector Layer */}
+              <svg
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  pointerEvents: 'none',
+                  zIndex: 0,
+                }}
+              >
+                {connectorPaths.map((connector) => (
+                  <path
+                    key={connector.id}
+                    d={connector.path}
+                    fill="none"
+                    stroke="rgba(255, 255, 255, 0.3)"
+                    strokeWidth="2"
+                    strokeDasharray="4 2"
+                  />
+                ))}
+              </svg>
+
+              {/* Skill Rows */}
+              <Box sx={{ position: 'relative', zIndex: 1 }}>
+                {[1, 3, 5, 7].map((level) => renderLevelRow(level, skillsByLevel[level]))}
+              </Box>
             </Box>
 
             {/* Selected skill confirmation */}
