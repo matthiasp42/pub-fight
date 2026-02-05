@@ -1,4 +1,5 @@
 import { TARGET_TYPES, EFFECT_TYPES } from './types.js';
+import { getBossById } from './bosses.js';
 
 /**
  * Common actions available to all characters
@@ -75,4 +76,28 @@ export function getActionsForCharacter(character, serverSkills, ownedSkillIds) {
     }));
 
   return [...actions, ...classAbilities];
+}
+
+/**
+ * Get actions for a boss by their boss ID
+ * @param {string} bossId - The boss definition ID (e.g., 'molly_the_matron')
+ * @returns {import('./types.js').Action[]}
+ */
+export function getBossActions(bossId) {
+  const bossDefinition = getBossById(bossId);
+  if (!bossDefinition) {
+    // Fallback to default actions if boss not found
+    return getDefaultActions('boss');
+  }
+
+  return bossDefinition.abilities.map((ability) => ({
+    id: ability.id,
+    name: ability.name,
+    cost: ability.cost,
+    targetType: ability.targetType,
+    hits: ability.hits,
+    effects: ability.effects,
+    selfEffects: ability.selfEffects,
+    special: ability.special,
+  }));
 }

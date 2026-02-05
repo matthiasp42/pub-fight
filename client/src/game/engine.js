@@ -1,4 +1,5 @@
 import { TARGET_TYPES, EFFECT_TYPES, CHARACTER_TYPES } from './types.js';
+import { createMinionForBoss } from './random.js';
 
 /**
  * Deep clone a fight state
@@ -230,6 +231,20 @@ export function applyEffect(character, effect) {
       character.state.ap = newAP;
       break;
     }
+
+    case EFFECT_TYPES.REMOVE_SHIELD: {
+      const shieldsRemoved = character.state.shield;
+      character.state.shield = 0;
+      result.amount = shieldsRemoved;
+      break;
+    }
+
+    case EFFECT_TYPES.SPAWN_MINION: {
+      // Minion spawning is handled at the action execution level,
+      // not in applyEffect. This is just a placeholder to prevent errors.
+      result.amount = effect.minionCount || 1;
+      break;
+    }
   }
 
   return result;
@@ -372,9 +387,54 @@ export function executeAction(state, actorId, actionId, manualTargetId) {
   }
 
   // 4. Apply self effects
+  // Calculate total damage dealt for drain effects
+  let totalDamageDealt = 0;
+  for (const targetResult of result.targetResults) {
+    for (const effectResult of targetResult.effects) {
+      if (effectResult.type === EFFECT_TYPES.DAMAGE) {
+        totalDamageDealt += effectResult.healthDamage || 0;
+      }
+    }
+  }
+
   for (const effect of action.selfEffects) {
-    const effectResult = applyEffect(actor, effect);
-    result.selfResults.push(effectResult);
+    // Handle drain healing - heal equals damage dealt
+    if (effect.type === EFFECT_TYPES.HEAL && effect.drain) {
+      const drainHealEffect = { ...effect, amount: totalDamageDealt };
+      const effectResult = applyEffect(actor, drainHealEffect);
+      result.selfResults.push(effectResult);
+    }
+    // Handle minion spawning
+    else if (effect.type === EFFECT_TYPES.SPAWN_MINION) {
+      const minionCount = effect.minionCount || 1;
+      const spawnedMinions = [];
+
+      for (let i = 0; i < minionCount; i++) {
+        const minion = createMinionForBoss(actor.bossId);
+        // Initialize minion state
+        minion.state.health = minion.attributes.maxHealth;
+        minion.state.ap = minion.attributes.maxAP;
+        minion.state.shield = 0;
+        minion.state.isAlive = true;
+
+        // Add minion to the fight
+        newState.characters.push(minion);
+        newState.turnOrder.push(minion.id);
+        spawnedMinions.push(minion);
+      }
+
+      const effectResult = {
+        type: EFFECT_TYPES.SPAWN_MINION,
+        amount: minionCount,
+        spawnedMinions: spawnedMinions.map((m) => ({ id: m.id, name: m.name })),
+      };
+      result.selfResults.push(effectResult);
+    }
+    // Normal self effect
+    else {
+      const effectResult = applyEffect(actor, effect);
+      result.selfResults.push(effectResult);
+    }
   }
 
   result.success = true;

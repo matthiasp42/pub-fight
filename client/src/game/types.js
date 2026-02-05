@@ -3,7 +3,8 @@
  *
  * @typedef {'player' | 'boss' | 'minion'} CharacterType
  * @typedef {'self' | 'manual' | 'random' | 'allParty' | 'allEnemies'} TargetType
- * @typedef {'damage' | 'heal' | 'addShield' | 'modifyAP'} EffectType
+ * @typedef {'damage' | 'heal' | 'addShield' | 'modifyAP' | 'spawnMinion' | 'removeShield'} EffectType
+ * @typedef {'swarmMaster' | 'executioner' | 'devastator' | 'tankBuster' | 'tempoManipulator' | 'regenerator' | 'hybridNightmare'} BossArchetype
  */
 
 /**
@@ -11,6 +12,8 @@
  * @property {EffectType} type
  * @property {number} amount
  * @property {boolean} [piercing] - Only for damage effects
+ * @property {boolean} [drain] - For heal effects: heal equals damage dealt
+ * @property {number} [minionCount] - For spawnMinion effects: number of minions to spawn
  */
 
 /**
@@ -52,6 +55,8 @@
  * @property {number} [level] - Character level 1-7 (players only)
  * @property {number} [perkPoints] - Available perk points (players only)
  * @property {string[]} [ownedSkillIds] - IDs of unlocked skills (players only)
+ * @property {string} [bossId] - Boss definition ID (bosses and their minions only)
+ * @property {BossArchetype} [archetype] - Boss archetype (bosses only)
  * @property {CharacterAttributes} attributes
  * @property {CharacterState} state
  * @property {Action[]} actions
@@ -60,6 +65,7 @@
 /**
  * @typedef {Object} FightState
  * @property {string} id
+ * @property {number} [level] - Boss level 1-7
  * @property {Character[]} characters
  * @property {string[]} turnOrder - Character IDs in turn order
  * @property {number} currentTurnIndex
@@ -116,6 +122,8 @@ export const EFFECT_TYPES = {
   HEAL: 'heal',
   ADD_SHIELD: 'addShield',
   MODIFY_AP: 'modifyAP',
+  SPAWN_MINION: 'spawnMinion',
+  REMOVE_SHIELD: 'removeShield',
 };
 
 export const CHARACTER_TYPES = {
@@ -176,4 +184,43 @@ export const CHARACTER_CLASSES = {
   WIZARD: 'wizard',
   ALCHEMIST: 'alchemist',
   WARRIOR: 'warrior',
+};
+
+/**
+ * @typedef {Object} BossAbility
+ * @property {string} id
+ * @property {string} name
+ * @property {number} cost
+ * @property {TargetType} targetType
+ * @property {number} hits
+ * @property {Effect[]} effects
+ * @property {Effect[]} selfEffects
+ * @property {'spawnMinion' | 'spawnMinion2' | 'requiresMark'} [special]
+ */
+
+/**
+ * @typedef {Object} MinionDefinition
+ * @property {string} name
+ * @property {CharacterAttributes} attributes
+ */
+
+/**
+ * @typedef {Object} BossDefinition
+ * @property {string} id
+ * @property {string} name
+ * @property {number} level
+ * @property {BossArchetype} archetype
+ * @property {CharacterAttributes} attributes
+ * @property {BossAbility[]} abilities
+ * @property {MinionDefinition} [minion]
+ */
+
+export const BOSS_ARCHETYPES = {
+  SWARM_MASTER: 'swarmMaster',
+  EXECUTIONER: 'executioner',
+  DEVASTATOR: 'devastator',
+  TANK_BUSTER: 'tankBuster',
+  TEMPO_MANIPULATOR: 'tempoManipulator',
+  REGENERATOR: 'regenerator',
+  HYBRID_NIGHTMARE: 'hybridNightmare',
 };

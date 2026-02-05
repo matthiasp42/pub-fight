@@ -15,7 +15,7 @@ import { TurnBar } from '../components/TurnBar.jsx';
 import { ActionPopover } from '../components/ActionPopover.jsx';
 import { GameLog } from '../components/GameLog.jsx';
 import { SkillTreeDialog } from '../components/SkillTreeDialog.jsx';
-import { createRandomFight, createRandomGameState } from '../game/random.js';
+import { createRandomFight, createRandomGameState, createFightForLevel, createGameStateForLevel } from '../game/random.js';
 import {
   executeAction,
   advanceTurn,

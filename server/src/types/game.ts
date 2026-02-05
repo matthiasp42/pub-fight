@@ -1,11 +1,14 @@
 export type TargetType = 'self' | 'manual' | 'random' | 'allParty' | 'allEnemies';
-export type EffectType = 'damage' | 'heal' | 'addShield' | 'modifyAP';
+export type EffectType = 'damage' | 'heal' | 'addShield' | 'modifyAP' | 'spawnMinion' | 'removeShield';
 export type CharacterClass = 'tank' | 'alchemist' | 'wizard' | 'warrior';
+export type BossArchetype = 'swarmMaster' | 'executioner' | 'devastator' | 'tankBuster' | 'tempoManipulator' | 'regenerator' | 'hybridNightmare';
 
 export interface Effect {
   type: EffectType;
   amount: number;
   piercing?: boolean;
+  drain?: boolean; // For heal effects: heal equals damage dealt
+  minionCount?: number; // For spawnMinion effects: number of minions to spawn
 }
 
 export type PassiveTrigger =
@@ -67,4 +70,41 @@ export interface SkillNode {
 export interface SkillTreeValidation {
   class: CharacterClass;
   skills: SkillNode[];
+}
+
+// Boss-specific types
+export interface CharacterAttributes {
+  maxHealth: number;
+  maxAP: number;
+  strength: number;
+  shieldCapacity: number;
+  shieldStrength: number;
+  dexterity: number;
+  evasiveness: number;
+}
+
+export interface BossAbility {
+  id: string;
+  name: string;
+  cost: number;
+  targetType: TargetType;
+  hits: number;
+  effects: Effect[];
+  selfEffects: Effect[];
+  special?: 'spawnMinion' | 'spawnMinion2' | 'requiresMark';
+}
+
+export interface MinionDefinition {
+  name: string;
+  attributes: CharacterAttributes;
+}
+
+export interface BossDefinition {
+  id: string;
+  name: string;
+  level: number;
+  archetype: BossArchetype;
+  attributes: CharacterAttributes;
+  abilities: BossAbility[];
+  minion?: MinionDefinition;
 }
