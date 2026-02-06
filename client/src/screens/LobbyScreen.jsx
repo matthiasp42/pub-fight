@@ -1,47 +1,36 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/client';
 
-export function LobbyScreen({ onEnterGame }) {
-  const [players, setPlayers] = useState({});
-  const [myPlayerId, setMyPlayerId] = useState(null);
+const CLASS_OPTIONS = [
+  { id: 'tank', name: 'Tank', icon: '\u{1F6E1}', desc: 'High HP, shields, protects allies' },
+  { id: 'warrior', name: 'Warrior', icon: '\u{2694}', desc: 'High damage, multi-hit attacks' },
+  { id: 'wizard', name: 'Wizard', icon: '\u{1F9D9}', desc: 'Powerful AoE magic, high dexterity' },
+  { id: 'alchemist', name: 'Alchemist', icon: '\u{1F9EA}', desc: 'Healing, buffs, support' },
+];
+
+export function LobbyScreen({ gameState, myPlayerId, onSelectPlayer, onReleasePlayer, onLogout, fetchState }) {
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [selectedClass, setSelectedClass] = useState('warrior');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const sessionId = localStorage.getItem('sessionId');
+  const players = gameState?.players ? Object.values(gameState.players) : [];
+  const phase = gameState?.phase || 'lobby';
 
-  const fetchPlayers = async () => {
-    try {
-      const state = await api.getState();
-      setPlayers(state.players);
-      // Check if we already control a player
-      const controlled = Object.values(state.players).find(
-        p => p.controlledBy === sessionId
-      );
-      if (controlled) {
-        setMyPlayerId(controlled.id);
-      }
-      setError('');
-    } catch (err) {
-      setError('Failed to load players');
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Poll for updates
   useEffect(() => {
-    fetchPlayers();
-    const interval = setInterval(fetchPlayers, 3000);
+    const interval = setInterval(fetchState, 3000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchState]);
 
   const handleTakeControl = async (playerId) => {
     try {
       const result = await api.join(playerId);
       if (result.success) {
-        setMyPlayerId(playerId);
-        fetchPlayers();
+        onSelectPlayer(playerId);
+        fetchState();
       } else {
         setError(result.error || 'Failed to take control');
       }
@@ -53,19 +42,22 @@ export function LobbyScreen({ onEnterGame }) {
   const handleCreate = async (e) => {
     e.preventDefault();
     if (!newName.trim()) return;
+    setLoading(true);
 
     try {
-      const result = await api.join(null, newName.trim());
+      const result = await api.join(null, newName.trim(), selectedClass);
       if (result.success) {
-        setMyPlayerId(result.player.id);
+        onSelectPlayer(result.player.id);
         setShowCreate(false);
         setNewName('');
-        fetchPlayers();
+        fetchState();
       } else {
         setError(result.error || 'Failed to create player');
       }
     } catch (err) {
       setError('Connection failed');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -73,36 +65,43 @@ export function LobbyScreen({ onEnterGame }) {
     if (!myPlayerId) return;
     try {
       await api.release(myPlayerId);
-      setMyPlayerId(null);
-      fetchPlayers();
+      onReleasePlayer();
+      fetchState();
     } catch (err) {
       setError('Failed to release');
     }
   };
 
-  const playerList = Object.values(players);
-
-  if (loading) {
-    return (
-      <div style={styles.container}>
-        <p>Loading...</p>
-      </div>
-    );
-  }
+  const handleStartGame = async () => {
+    try {
+      const result = await api.startGame();
+      if (result.success) {
+        fetchState();
+      } else {
+        setError(result.error || 'Failed to start game');
+      }
+    } catch (err) {
+      setError('Connection failed');
+    }
+  };
 
   return (
     <div style={styles.container}>
-      <h1 style={styles.title}>Lobby</h1>
+      <h1 style={styles.title}>Pub Fight</h1>
+      <p style={styles.subtitle}>
+        {phase === 'lobby' ? 'Pick your fighter' : 'Game in progress - select your character'}
+      </p>
 
       {error && <p style={styles.error}>{error}</p>}
 
       <div style={styles.playerList}>
-        {playerList.length === 0 && (
+        {players.length === 0 && (
           <p style={styles.empty}>No players yet. Create one!</p>
         )}
-        {playerList.map(player => {
+        {players.map(player => {
           const isControlled = !!player.controlledBy;
           const isMine = player.controlledBy === sessionId;
+          const classIcon = CLASS_OPTIONS.find(c => c.id === player.class)?.icon || '';
 
           return (
             <div
@@ -112,9 +111,16 @@ export function LobbyScreen({ onEnterGame }) {
                 ...(isMine ? styles.myCard : {}),
                 ...(isControlled && !isMine ? styles.takenCard : {})
               }}
-              onClick={() => !isControlled && handleTakeControl(player.id)}
+              onClick={() => !isMine && handleTakeControl(player.id)}
             >
-              <span style={styles.playerName}>{player.name}</span>
+              <div style={styles.playerInfo}>
+                <span style={styles.playerName}>
+                  {classIcon} {player.name}
+                </span>
+                <span style={styles.playerClass}>
+                  {player.class} Lv.{player.level}
+                </span>
+              </div>
               <span style={styles.playerStatus}>
                 {isMine ? '(You)' : isControlled ? '(Taken)' : '(Available)'}
               </span>
@@ -123,7 +129,16 @@ export function LobbyScreen({ onEnterGame }) {
         })}
       </div>
 
-      {showCreate ? (
+      {phase === 'lobby' && !showCreate && (
+        <button
+          style={styles.addButton}
+          onClick={() => setShowCreate(true)}
+        >
+          + New Player
+        </button>
+      )}
+
+      {showCreate && (
         <form onSubmit={handleCreate} style={styles.createForm}>
           <input
             type="text"
@@ -134,9 +149,27 @@ export function LobbyScreen({ onEnterGame }) {
             autoFocus
             maxLength={20}
           />
+
+          <div style={styles.classGrid}>
+            {CLASS_OPTIONS.map(cls => (
+              <div
+                key={cls.id}
+                style={{
+                  ...styles.classCard,
+                  ...(selectedClass === cls.id ? styles.classCardSelected : {})
+                }}
+                onClick={() => setSelectedClass(cls.id)}
+              >
+                <span style={styles.classIcon}>{cls.icon}</span>
+                <span style={styles.className}>{cls.name}</span>
+                <span style={styles.classDesc}>{cls.desc}</span>
+              </div>
+            ))}
+          </div>
+
           <div style={styles.createButtons}>
-            <button type="submit" style={styles.button}>
-              Create
+            <button type="submit" style={styles.button} disabled={loading}>
+              {loading ? 'Creating...' : 'Create'}
             </button>
             <button
               type="button"
@@ -147,28 +180,29 @@ export function LobbyScreen({ onEnterGame }) {
             </button>
           </div>
         </form>
-      ) : (
-        <button
-          style={styles.addButton}
-          onClick={() => setShowCreate(true)}
-        >
-          + New Player
-        </button>
       )}
 
-      {myPlayerId && (
+      {myPlayerId && phase === 'lobby' && (
         <div style={styles.bottomButtons}>
           <button style={styles.releaseButton} onClick={handleRelease}>
-            Release Character
+            Release
           </button>
           <button
-            style={styles.enterButton}
-            onClick={() => onEnterGame(myPlayerId)}
+            style={{
+              ...styles.enterButton,
+              ...(players.length < 1 ? styles.disabledButton : {})
+            }}
+            onClick={handleStartGame}
+            disabled={players.length < 1}
           >
-            Enter Game
+            Start Game ({players.length} player{players.length !== 1 ? 's' : ''})
           </button>
         </div>
       )}
+
+      <button style={styles.logoutButton} onClick={onLogout}>
+        Logout
+      </button>
     </div>
   );
 }
@@ -179,19 +213,24 @@ const styles = {
     flexDirection: 'column',
     alignItems: 'center',
     minHeight: '100vh',
-    padding: '20px'
+    padding: '20px',
   },
   title: {
     fontSize: '2rem',
-    marginBottom: '1.5rem'
+    marginBottom: '0.5rem',
+  },
+  subtitle: {
+    color: '#888',
+    marginBottom: '1.5rem',
+    fontSize: '0.9rem',
   },
   error: {
     color: '#ff6b6b',
-    marginBottom: '1rem'
+    marginBottom: '1rem',
   },
   empty: {
     color: '#888',
-    fontStyle: 'italic'
+    fontStyle: 'italic',
   },
   playerList: {
     width: '100%',
@@ -199,7 +238,7 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '0.75rem',
-    marginBottom: '1.5rem'
+    marginBottom: '1.5rem',
   },
   playerCard: {
     display: 'flex',
@@ -209,23 +248,33 @@ const styles = {
     borderRadius: '12px',
     background: 'rgba(255,255,255,0.1)',
     cursor: 'pointer',
-    transition: 'transform 0.1s, background 0.2s'
+    transition: 'transform 0.1s, background 0.2s',
   },
   myCard: {
     background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    cursor: 'default'
+    cursor: 'default',
   },
   takenCard: {
     opacity: 0.5,
-    cursor: 'not-allowed'
+    cursor: 'pointer',
+  },
+  playerInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.25rem',
   },
   playerName: {
     fontSize: '1.2rem',
-    fontWeight: 'bold'
+    fontWeight: 'bold',
+  },
+  playerClass: {
+    fontSize: '0.8rem',
+    opacity: 0.7,
+    textTransform: 'capitalize',
   },
   playerStatus: {
     fontSize: '0.9rem',
-    opacity: 0.7
+    opacity: 0.7,
   },
   addButton: {
     padding: '0.75rem 1.5rem',
@@ -233,15 +282,15 @@ const styles = {
     borderRadius: '12px',
     background: 'rgba(255,255,255,0.1)',
     color: '#fff',
-    marginBottom: '2rem'
+    marginBottom: '2rem',
   },
   createForm: {
     display: 'flex',
     flexDirection: 'column',
     gap: '1rem',
     width: '100%',
-    maxWidth: '300px',
-    marginBottom: '2rem'
+    maxWidth: '400px',
+    marginBottom: '2rem',
   },
   input: {
     padding: '1rem',
@@ -250,11 +299,44 @@ const styles = {
     border: '2px solid #4a4a6a',
     background: 'rgba(255,255,255,0.1)',
     color: '#fff',
-    textAlign: 'center'
+    textAlign: 'center',
+  },
+  classGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '0.75rem',
+  },
+  classCard: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    padding: '0.75rem',
+    borderRadius: '12px',
+    border: '2px solid transparent',
+    background: 'rgba(255,255,255,0.05)',
+    cursor: 'pointer',
+    gap: '0.25rem',
+    transition: 'border-color 0.2s',
+  },
+  classCardSelected: {
+    borderColor: '#ffd700',
+    background: 'rgba(255,215,0,0.1)',
+  },
+  classIcon: {
+    fontSize: '1.5rem',
+  },
+  className: {
+    fontSize: '0.9rem',
+    fontWeight: 'bold',
+  },
+  classDesc: {
+    fontSize: '0.7rem',
+    opacity: 0.6,
+    textAlign: 'center',
   },
   createButtons: {
     display: 'flex',
-    gap: '1rem'
+    gap: '1rem',
   },
   button: {
     flex: 1,
@@ -263,7 +345,7 @@ const styles = {
     borderRadius: '12px',
     background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
     color: '#fff',
-    fontWeight: 'bold'
+    fontWeight: 'bold',
   },
   cancelButton: {
     flex: 1,
@@ -271,7 +353,7 @@ const styles = {
     fontSize: '1rem',
     borderRadius: '12px',
     background: 'rgba(255,255,255,0.1)',
-    color: '#fff'
+    color: '#fff',
   },
   bottomButtons: {
     position: 'fixed',
@@ -281,7 +363,7 @@ const styles = {
     display: 'flex',
     gap: '1rem',
     maxWidth: '400px',
-    margin: '0 auto'
+    margin: '0 auto',
   },
   releaseButton: {
     flex: 1,
@@ -289,7 +371,7 @@ const styles = {
     fontSize: '1rem',
     borderRadius: '12px',
     background: 'rgba(255,107,107,0.3)',
-    color: '#fff'
+    color: '#fff',
   },
   enterButton: {
     flex: 2,
@@ -298,6 +380,19 @@ const styles = {
     borderRadius: '12px',
     background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
     color: '#fff',
-    fontWeight: 'bold'
-  }
+    fontWeight: 'bold',
+  },
+  disabledButton: {
+    opacity: 0.4,
+    cursor: 'not-allowed',
+  },
+  logoutButton: {
+    marginTop: '1rem',
+    padding: '0.5rem 1rem',
+    fontSize: '0.8rem',
+    borderRadius: '8px',
+    background: 'transparent',
+    color: '#666',
+    border: '1px solid #333',
+  },
 };

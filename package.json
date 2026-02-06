@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "start": "cd server && npm start",
-    "dev": "cd server && npm run dev",
+    "dev": "cd server && npm run dev & cd client && npm run dev",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
     "build": "cd client && npm install && npm run build && mkdir -p ../server/public && cp -r dist/* ../server/public/ && cd ../server && npm install"
   }
 }

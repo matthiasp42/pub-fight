@@ -1,4 +1,4 @@
-import type { BossDefinition, BossAbility, MinionDefinition } from '../types/game';
+import type { BossDefinition, BossAbility, MinionDefinition } from '../types/game.js';
 
 // Minion definitions for bosses that can spawn minions
 const MOLLY_MINION: MinionDefinition = {

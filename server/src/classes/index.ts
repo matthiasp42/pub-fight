@@ -1,0 +1,40 @@
+import type { CharacterClass, CharacterAttributes } from '../types/game.js';
+
+export const CLASS_BASE_ATTRIBUTES: Record<CharacterClass, CharacterAttributes> = {
+  tank: {
+    maxHealth: 120,
+    maxAP: 4,
+    strength: 8,
+    shieldCapacity: 4,
+    shieldStrength: 8,
+    dexterity: 40,
+    evasiveness: 20,
+  },
+  warrior: {
+    maxHealth: 100,
+    maxAP: 5,
+    strength: 15,
+    shieldCapacity: 2,
+    shieldStrength: 5,
+    dexterity: 60,
+    evasiveness: 30,
+  },
+  wizard: {
+    maxHealth: 80,
+    maxAP: 6,
+    strength: 12,
+    shieldCapacity: 2,
+    shieldStrength: 4,
+    dexterity: 70,
+    evasiveness: 40,
+  },
+  alchemist: {
+    maxHealth: 90,
+    maxAP: 5,
+    strength: 10,
+    shieldCapacity: 3,
+    shieldStrength: 5,
+    dexterity: 50,
+    evasiveness: 35,
+  },
+};
