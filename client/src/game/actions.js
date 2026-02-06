@@ -11,7 +11,7 @@ export const COMMON_ACTIONS = {
     cost: 1,
     targetType: TARGET_TYPES.RANDOM,
     hits: 1,
-    effects: [{ type: EFFECT_TYPES.DAMAGE, amount: 10 }],
+    effects: [{ type: EFFECT_TYPES.DAMAGE, amount: 1 }],
     selfEffects: [],
   },
   shield: {
@@ -40,8 +40,7 @@ export const COMMON_ACTIONS = {
  * @returns {import('./types.js').Action[]}
  */
 export function getDefaultActions(characterType) {
-  // For now, all characters get attack and shield
-  return [COMMON_ACTIONS.attack, COMMON_ACTIONS.shield];
+  return [COMMON_ACTIONS.attack, COMMON_ACTIONS.shield, COMMON_ACTIONS.rest];
 }
 
 /**
@@ -52,7 +51,6 @@ export function getDefaultActions(characterType) {
  * @returns {import('./types.js').Action[]}
  */
 export function getActionsForCharacter(character, serverSkills, ownedSkillIds) {
-  // Start with common actions (rest is always available)
   const actions = [COMMON_ACTIONS.attack, COMMON_ACTIONS.shield, COMMON_ACTIONS.rest];
 
   // If no class, just return common actions

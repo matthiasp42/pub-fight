@@ -8,10 +8,8 @@ import {
   AccordionSummary,
   AccordionDetails,
   Chip,
-  Fab,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import HistoryIcon from '@mui/icons-material/History';
 import CloseIcon from '@mui/icons-material/Close';
 
 /**
@@ -46,21 +44,6 @@ export function GameLog({ logs, open, onToggle }) {
 
   return (
     <>
-      {/* Toggle Button */}
-      <Fab
-        color="primary"
-        size="small"
-        onClick={onToggle}
-        sx={{
-          position: 'fixed',
-          bottom: 16,
-          right: 16,
-          zIndex: 1000,
-        }}
-      >
-        <HistoryIcon />
-      </Fab>
-
       {/* Log Drawer */}
       <Drawer
         anchor="right"

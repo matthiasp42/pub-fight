@@ -1,16 +1,11 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import {
-  Box,
-  Typography,
-  Button,
-  Paper,
-  ThemeProvider,
-  createTheme,
-  CssBaseline,
-  Alert,
-} from '@mui/material';
-import { CharacterCard } from '../components/CharacterCard.jsx';
-import { TurnBar } from '../components/TurnBar.jsx';
+import { Box, Typography, Button } from '@mui/material';
+import { motion } from 'framer-motion';
+import { GiCrossedSwords } from 'react-icons/gi';
+import { BattleCharacter } from '../components/BattleCharacter.jsx';
+import { BattleTurnStrip } from '../components/BattleTurnStrip.jsx';
+import { BattleActionBar } from '../components/BattleActionBar.jsx';
+import { BattleFeedback } from '../components/BattleFeedback.jsx';
 import { ActionPopover } from '../components/ActionPopover.jsx';
 import { GameLog } from '../components/GameLog.jsx';
 import { SkillTreeDialog } from '../components/SkillTreeDialog.jsx';
@@ -26,14 +21,60 @@ import { CHARACTER_TYPES } from '../game/types.js';
 import { chooseBossAction } from '../game/bossAI.js';
 import { api } from '../api/client.js';
 
-const darkTheme = createTheme({
-  palette: {
-    mode: 'dark',
-    primary: { main: '#ffd700' },
-    secondary: { main: '#9c27b0' },
-    background: { default: '#121212', paper: '#1e1e1e' },
-  },
-});
+// Timing constants for boss action animations (ms)
+const IMPACT_DELAY = 1200;  // When damage applies + shake + combat text
+const CLEAR_DELAY = 2800;   // When animation clears and next starts
+
+/**
+ * Collect all consecutive boss/minion turns into an animation queue.
+ * Returns { actions: [...], finalState } where each action has all the
+ * data needed for animation and state updates.
+ */
+function collectBossTurns(startState) {
+  const actions = [];
+  let state = cloneState(startState);
+  let actor = getCurrentTurnCharacter(state);
+
+  while (actor && actor.type !== CHARACTER_TYPES.PLAYER && !state.isOver) {
+    const action = chooseBossAction(actor);
+    if (!action) {
+      state = advanceTurn(state);
+      actor = getCurrentTurnCharacter(state);
+      continue;
+    }
+
+    const stateBefore = cloneState(state);
+    const { newState, result } = executeAction(state, actor.id, action.id);
+
+    if (result.success) {
+      const stateAfterTurn = advanceTurn(newState);
+      actions.push({
+        actorId: actor.id,
+        actorName: actor.name,
+        actorType: actor.type,
+        actionName: result.actionName,
+        result,
+        logEntry: {
+          timestamp: Date.now(),
+          type: 'action',
+          stateBefore,
+          stateAfter: newState,
+          actionResult: result,
+          description: `${actor.name} used ${result.actionName}`,
+        },
+        stateAfterAction: newState,
+        stateAfterTurn,
+      });
+      state = stateAfterTurn;
+      actor = getCurrentTurnCharacter(state);
+    } else {
+      state = advanceTurn(state);
+      actor = getCurrentTurnCharacter(state);
+    }
+  }
+
+  return { actions, finalState: state };
+}
 
 export function FightScreen({ gameState, myPlayer, fetchState }) {
   const [localFight, setLocalFight] = useState(null);
@@ -47,23 +88,133 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
   const lastFightVersionRef = useRef(-1);
   const initRef = useRef(false);
 
+  // Animation queue state
+  const [animQueue, setAnimQueue] = useState([]);
+  const animPlayingRef = useRef(false);
+  const animTimersRef = useRef([]);
+  const [activeAnim, setActiveAnim] = useState(null);
+  const [showImpact, setShowImpact] = useState(false);
+  const [hitTargets, setHitTargets] = useState(new Set());
+  const finalAnimStateRef = useRef(null);
+  const postToServerRef = useRef(null);
+  const bossTurnScheduledRef = useRef(false);
+
   const activeDungeonId = gameState?.activeDungeonId;
   const serverFight = gameState?.fightState;
   const serverFightVersion = gameState?.fightVersion ?? 0;
   const dungeons = gameState?.dungeons || [];
 
-  // Initialize fight state if server doesn't have one yet
+  // Post final state to server + handle victory
+  const postToServer = useCallback(async (state) => {
+    try {
+      const res = await api.postFightState(state, lastFightVersionRef.current);
+      if (res.success) {
+        lastFightVersionRef.current = res.fightVersion;
+      }
+    } catch (err) {
+      console.error('Failed to post fight state:', err);
+    }
+
+    if (state.isOver && state.result === 'victory' && activeDungeonId) {
+      try {
+        await api.dungeonCleared(activeDungeonId);
+      } catch (err) {
+        console.error('Failed to report dungeon cleared:', err);
+      }
+    }
+
+    setPosting(false);
+    fetchState();
+  }, [activeDungeonId, fetchState]);
+
+  // Keep ref in sync so timers always call the latest version
+  postToServerRef.current = postToServer;
+
+  // Clean up animation timers on unmount
+  useEffect(() => {
+    return () => {
+      animTimersRef.current.forEach(clearTimeout);
+    };
+  }, []);
+
+  // --- Animation Queue Processor ---
+  // Uses a ref for the "playing" lock so setting it doesn't trigger re-renders
+  // that would clean up our timers.
+  useEffect(() => {
+    if (animPlayingRef.current || animQueue.length === 0) return;
+
+    animPlayingRef.current = true;
+    const current = animQueue[0];
+    const isLastInQueue = animQueue.length === 1;
+
+    // Phase 1: Show banner + beam starts
+    setActiveAnim({
+      actorId: current.actorId,
+      actorName: current.actorName,
+      actorType: current.actorType,
+      actionName: current.actionName,
+      targetResults: current.result.targetResults,
+      selfEffects: current.result.selfResults,
+    });
+    setShowImpact(false);
+    setHitTargets(new Set());
+
+    // Phase 2: Impact - apply damage, show shake + combat text
+    const t1 = setTimeout(() => {
+      setLocalFight(current.stateAfterAction);
+      setShowImpact(true);
+      const hitIds = (current.result.targetResults || [])
+        .filter(tr => tr.hit !== false)
+        .map(tr => tr.targetId);
+      setHitTargets(new Set(hitIds));
+    }, IMPACT_DELAY);
+
+    // Phase 3: Clear animation, advance turn, move to next
+    const t2 = setTimeout(() => {
+      setActiveAnim(null);
+      setShowImpact(false);
+      setHitTargets(new Set());
+      setLocalFight(current.stateAfterTurn);
+      setLogs(prev => [...prev, current.logEntry]);
+
+      animPlayingRef.current = false;
+      setAnimQueue(prev => prev.slice(1));
+
+      // If this was the last animation, post final state
+      if (isLastInQueue && finalAnimStateRef.current) {
+        const finalState = finalAnimStateRef.current;
+        finalAnimStateRef.current = null;
+        postToServerRef.current(finalState);
+      }
+    }, CLEAR_DELAY);
+
+    animTimersRef.current = [t1, t2];
+  }, [animQueue]);
+
+  // Start an animation sequence for boss turns
+  const startBossAnimations = useCallback((startState) => {
+    const { actions, finalState } = collectBossTurns(startState);
+
+    if (actions.length === 0) {
+      setLocalFight(finalState);
+      postToServer(finalState);
+      return;
+    }
+
+    finalAnimStateRef.current = finalState;
+    setAnimQueue(actions);
+  }, [postToServer]);
+
+  // --- Initialize fight state ---
   useEffect(() => {
     if (!activeDungeonId || initRef.current) return;
 
     if (!serverFight && gameState?.players) {
-      // First client to load builds the fight
       initRef.current = true;
       try {
         const fight = buildFightFromServer(gameState.players, activeDungeonId, dungeons);
         setLocalFight(fight);
 
-        // Post to server
         api.postFightState(fight, 0).then(res => {
           if (res.success) {
             lastFightVersionRef.current = res.fightVersion;
@@ -89,7 +240,6 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
     if (!serverFight) return;
     if (serverFightVersion <= lastFightVersionRef.current) return;
 
-    // Server has a newer version - update local state
     lastFightVersionRef.current = serverFightVersion;
     setLocalFight(serverFight);
 
@@ -113,85 +263,37 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
   const fightState = localFight;
   const currentCharacter = fightState ? getCurrentTurnCharacter(fightState) : null;
 
-  // Is it my character's turn?
   const isMyTurn = currentCharacter?.type === CHARACTER_TYPES.PLAYER &&
     currentCharacter?.id === myPlayer?.id;
 
-  // Is it any player's turn (for boss auto-processing)?
   const isPlayerTurn = currentCharacter?.type === CHARACTER_TYPES.PLAYER;
 
-  // Auto-process boss/minion turns
+  // Auto-process boss/minion turns (now animated)
+  // IMPORTANT: No state changes before the timer fires — otherwise React
+  // cleanup would cancel the timer (the same bug class as the animPlaying fix).
   useEffect(() => {
-    if (!fightState || fightState.isOver || posting) return;
+    if (!fightState || fightState.isOver || posting || animPlayingRef.current || animQueue.length > 0) return;
     if (!currentCharacter || isPlayerTurn) return;
+    if (bossTurnScheduledRef.current) return;
 
-    // It's a boss/minion turn - auto-process if it's my player's next turn coming up
-    // Or if the current character is a boss and we're the first player
     const playerIds = Object.keys(gameState?.players || {});
     const myIndex = playerIds.indexOf(myPlayer?.id);
-    if (myIndex !== 0) return; // Only first player auto-processes boss turns
+    if (myIndex !== 0) return;
 
+    bossTurnScheduledRef.current = true;
     const timer = setTimeout(() => {
-      autoBossTurn();
-    }, 800);
+      bossTurnScheduledRef.current = false;
+      setPosting(true);
+      startBossAnimations(fightState);
+    }, 600);
 
-    return () => clearTimeout(timer);
-  }, [fightState?.currentTurnIndex, posting]);
+    return () => {
+      clearTimeout(timer);
+      bossTurnScheduledRef.current = false;
+    };
+  }, [fightState?.currentTurnIndex, posting, animQueue.length]);
 
-  const autoBossTurn = useCallback(async () => {
-    if (!fightState || !currentCharacter || posting) return;
-    if (currentCharacter.type === CHARACTER_TYPES.PLAYER) return;
-
-    setPosting(true);
-
-    let state = cloneState(fightState);
-    let actor = getCurrentTurnCharacter(state);
-
-    // Process all consecutive boss/minion turns
-    while (actor && actor.type !== CHARACTER_TYPES.PLAYER && !state.isOver) {
-      const action = chooseBossAction(actor);
-      if (!action) {
-        state = advanceTurn(state);
-        actor = getCurrentTurnCharacter(state);
-        continue;
-      }
-
-      const stateBefore = cloneState(state);
-      const { newState, result } = executeAction(state, actor.id, action.id);
-
-      if (result.success) {
-        setLogs(prev => [...prev, {
-          timestamp: Date.now(),
-          type: 'action',
-          stateBefore,
-          stateAfter: newState,
-          actionResult: result,
-          description: `${actor.name} used ${result.actionName}`,
-        }]);
-
-        state = advanceTurn(newState);
-        actor = getCurrentTurnCharacter(state);
-      } else {
-        state = advanceTurn(state);
-        actor = getCurrentTurnCharacter(state);
-      }
-    }
-
-    setLocalFight(state);
-
-    // Post to server
-    try {
-      const res = await api.postFightState(state, lastFightVersionRef.current);
-      if (res.success) {
-        lastFightVersionRef.current = res.fightVersion;
-      }
-    } catch (err) {
-      console.error('Failed to post fight state:', err);
-    }
-    setPosting(false);
-    fetchState();
-  }, [fightState, currentCharacter, posting, fetchState]);
-
+  // --- Player Actions ---
   const handleAction = useCallback((actionId) => {
     if (!currentCharacter || !isMyTurn) return;
 
@@ -218,9 +320,7 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
     if (!pendingAction) return;
 
     const { result, newState, stateBefore, actorName } = pendingAction;
-    setPosting(true);
 
-    // Log the action
     setLogs(prev => [...prev, {
       timestamp: Date.now(),
       type: 'action',
@@ -230,67 +330,28 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
       description: `${actorName} used ${result.actionName}`,
     }]);
 
-    // Advance turn
-    let state = advanceTurn(newState);
-
-    // Auto-process subsequent boss/minion turns
-    let actor = getCurrentTurnCharacter(state);
-    while (actor && actor.type !== CHARACTER_TYPES.PLAYER && !state.isOver) {
-      const action = chooseBossAction(actor);
-      if (!action) {
-        state = advanceTurn(state);
-        actor = getCurrentTurnCharacter(state);
-        continue;
-      }
-
-      const bossStateBefore = cloneState(state);
-      const { newState: bossNewState, result: bossResult } = executeAction(state, actor.id, action.id);
-
-      if (bossResult.success) {
-        setLogs(prev => [...prev, {
-          timestamp: Date.now(),
-          type: 'action',
-          stateBefore: bossStateBefore,
-          stateAfter: bossNewState,
-          actionResult: bossResult,
-          description: `${actor.name} used ${bossResult.actionName}`,
-        }]);
-
-        state = advanceTurn(bossNewState);
-        actor = getCurrentTurnCharacter(state);
-      } else {
-        state = advanceTurn(state);
-        actor = getCurrentTurnCharacter(state);
-      }
-    }
-
-    setLocalFight(state);
+    const stateAfterPlayerTurn = advanceTurn(newState);
     setPendingAction(null);
 
-    // Post to server
-    try {
-      const res = await api.postFightState(state, lastFightVersionRef.current);
-      if (res.success) {
-        lastFightVersionRef.current = res.fightVersion;
-      }
-    } catch (err) {
-      console.error('Failed to post fight state:', err);
-    }
+    // Check if boss turns follow
+    const nextActor = getCurrentTurnCharacter(stateAfterPlayerTurn);
+    const hasBossTurns = nextActor &&
+      nextActor.type !== CHARACTER_TYPES.PLAYER &&
+      !stateAfterPlayerTurn.isOver;
 
-    // Check victory/defeat
-    if (state.isOver) {
-      if (state.result === 'victory' && activeDungeonId) {
-        try {
-          await api.dungeonCleared(activeDungeonId);
-        } catch (err) {
-          console.error('Failed to report dungeon cleared:', err);
-        }
-      }
+    if (hasBossTurns) {
+      setLocalFight(stateAfterPlayerTurn);
+      setPosting(true);
+      // Short delay before boss animations start
+      setTimeout(() => {
+        startBossAnimations(stateAfterPlayerTurn);
+      }, 300);
+    } else {
+      setLocalFight(stateAfterPlayerTurn);
+      setPosting(true);
+      postToServer(stateAfterPlayerTurn);
     }
-
-    setPosting(false);
-    fetchState();
-  }, [pendingAction, fetchState, activeDungeonId]);
+  }, [pendingAction, startBossAnimations, postToServer]);
 
   const handleRetryFight = useCallback(async () => {
     if (!activeDungeonId || !gameState?.players) return;
@@ -313,6 +374,12 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
         description: 'Fight restarted!',
       }]);
       setPendingAction(null);
+      setAnimQueue([]);
+      setActiveAnim(null);
+      setHitTargets(new Set());
+      animPlayingRef.current = false;
+      bossTurnScheduledRef.current = false;
+      animTimersRef.current.forEach(clearTimeout);
     } catch (err) {
       console.error('Failed to restart fight:', err);
     }
@@ -352,12 +419,24 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
   // Loading state
   if (!fightState) {
     return (
-      <ThemeProvider theme={darkTheme}>
-        <CssBaseline />
-        <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Typography color="text.secondary">Preparing fight...</Typography>
-        </Box>
-      </ThemeProvider>
+      <Box
+        sx={{
+          height: '100dvh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'radial-gradient(ellipse at center, #1a1a2e 0%, #0d0d1a 100%)',
+        }}
+      >
+        <motion.div
+          animate={{ opacity: [0.4, 1, 0.4] }}
+          transition={{ duration: 2, repeat: Infinity }}
+        >
+          <Typography sx={{ color: 'text.secondary', fontSize: '0.9rem' }}>
+            Preparing fight...
+          </Typography>
+        </motion.div>
+      </Box>
     );
   }
 
@@ -367,168 +446,230 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
   const players = fightState.characters.filter(
     c => c.type === CHARACTER_TYPES.PLAYER
   );
+  const myCharacter = players.find(p => p.id === myPlayer?.id);
+
+  // During animations, disable player actions
+  const isAnimating = animQueue.length > 0 || activeAnim !== null;
 
   return (
-    <ThemeProvider theme={darkTheme}>
-      <CssBaseline />
-      <Box sx={{ minHeight: '100vh', backgroundColor: 'background.default', p: 2, display: 'flex' }}>
-        {/* Turn Bar - Left Side */}
-        <Box sx={{ mr: 2 }}>
-          <TurnBar
-            characters={fightState.characters}
-            turnOrder={fightState.turnOrder}
-            currentTurnIndex={fightState.currentTurnIndex}
-          />
-        </Box>
+    <Box
+      sx={{
+        height: '100dvh',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        background: 'radial-gradient(ellipse at 50% 30%, #1a1a2e 0%, #0d0d1a 70%, #050510 100%)',
+        position: 'relative',
+      }}
+    >
+      {/* Atmospheric vignette */}
+      <Box
+        sx={{
+          position: 'absolute',
+          inset: 0,
+          pointerEvents: 'none',
+          background: 'radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.4) 100%)',
+          zIndex: 0,
+        }}
+      />
 
-        {/* Main Content */}
-        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          {/* Header */}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h4" sx={{ color: '#fff', fontWeight: 'bold' }}>
-              Pub Fight
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              {posting && (
-                <Typography variant="body2" sx={{ color: '#ffd700' }}>
-                  Syncing...
-                </Typography>
-              )}
-              <Button size="small" onClick={() => setShowAdmin(true)} sx={{ color: '#888', minWidth: 'auto', fontSize: '0.75rem' }}>
-                Admin
-              </Button>
-            </Box>
+      {/* Main layout */}
+      <Box sx={{ flex: 1, position: 'relative', zIndex: 1, overflow: 'hidden' }}>
+        {/* Turn Order Strip - floating, centered */}
+        <BattleTurnStrip
+          characters={fightState.characters}
+          turnOrder={fightState.turnOrder}
+          currentTurnIndex={fightState.currentTurnIndex}
+        />
+
+        {/* Battlefield */}
+        <Box
+          sx={{
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        >
+          {/* Sync indicator + Admin button */}
+          <Box sx={{ position: 'absolute', top: 4, right: 40, zIndex: 10, display: 'flex', gap: 1, alignItems: 'center' }}>
+            {posting && (
+              <Typography sx={{ color: 'primary.main', fontSize: '0.6rem', opacity: 0.7 }}>
+                syncing...
+              </Typography>
+            )}
+            <Button
+              size="small"
+              onClick={() => setShowAdmin(true)}
+              sx={{
+                minWidth: 'auto',
+                minHeight: 'auto',
+                p: 0.5,
+                fontSize: '0.55rem',
+                color: 'rgba(168, 160, 149, 0.3)',
+                '&:hover': { color: 'text.secondary' },
+              }}
+            >
+              Admin
+            </Button>
           </Box>
 
-          {/* Fight Over Alert */}
-          {fightState.isOver && (
-            <Alert
-              severity={fightState.result === 'victory' ? 'success' : 'error'}
-              sx={{ mb: 2 }}
-              action={
-                fightState.result === 'defeat' ? (
-                  <Button color="inherit" size="small" onClick={handleRetryFight}>
-                    Retry Fight
-                  </Button>
-                ) : null
-              }
+          {/* Level indicator */}
+          <Box sx={{ textAlign: 'center', pt: 1, pb: 0.5 }}>
+            <Typography
+              sx={{
+                fontSize: '0.6rem',
+                color: 'rgba(168, 160, 149, 0.5)',
+                textTransform: 'uppercase',
+                letterSpacing: 2,
+              }}
             >
-              {fightState.result === 'victory'
-                ? 'Victory! Boss defeated! Leveling up...'
-                : 'Defeat! Your party has been wiped out!'}
-            </Alert>
-          )}
-
-          {/* Current Turn Indicator */}
-          {!fightState.isOver && currentCharacter && (
-            <Paper sx={{ p: 2, mb: 2, backgroundColor: isMyTurn ? 'rgba(255, 215, 0, 0.15)' : 'rgba(255, 255, 255, 0.05)' }}>
-              <Typography variant="h6" sx={{ color: isMyTurn ? '#ffd700' : '#888' }}>
-                {isMyTurn ? 'Your Turn!' : `Waiting: ${currentCharacter.name}'s turn`}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                AP: {currentCharacter.state.ap} / {currentCharacter.attributes.maxAP}
-              </Typography>
-            </Paper>
-          )}
-
-          {/* Enemies - Top */}
-          <Box sx={{ mb: 4 }}>
-            <Typography variant="h6" sx={{ color: '#ff4444', mb: 2 }}>
-              Enemies
+              {fightState.level ? `Level ${fightState.level}` : 'Battle'}
             </Typography>
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          </Box>
+
+          {/* Enemy Zone */}
+          <Box
+            sx={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              pb: 1.5,
+              px: 1,
+            }}
+          >
+            <Box
+              sx={{
+                display: 'flex',
+                gap: { xs: 2, sm: 3 },
+                alignItems: 'flex-end',
+                justifyContent: 'center',
+                flexWrap: 'wrap',
+              }}
+            >
               {enemies.map(enemy => (
-                <CharacterCard
+                <BattleCharacter
                   key={enemy.id}
                   character={enemy}
                   isCurrentTurn={currentCharacter?.id === enemy.id}
-                  onAction={handleAction}
-                  showActions={currentCharacter?.id === enemy.id && isMyTurn && !fightState.isOver}
+                  isEnemy
+                  size={enemy.type === CHARACTER_TYPES.BOSS ? 'boss' : 'normal'}
+                  isBeingHit={hitTargets.has(enemy.id)}
                 />
               ))}
             </Box>
           </Box>
 
-          {/* VS Divider */}
-          <Box sx={{
-            borderTop: '2px dashed #444',
-            my: 2,
-            position: 'relative',
-            '&::after': {
-              content: '"VS"',
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -50%)',
-              backgroundColor: 'background.default',
+          {/* Battle Line */}
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              py: 0.5,
               px: 2,
-              color: '#666',
-              fontWeight: 'bold',
-            },
-          }} />
+            }}
+          >
+            <Box sx={{ flex: 1, height: '1px', background: 'linear-gradient(90deg, transparent, rgba(245, 158, 11, 0.2), transparent)' }} />
+            <Box sx={{ px: 1.5 }}>
+              <GiCrossedSwords size={16} color="rgba(245, 158, 11, 0.3)" />
+            </Box>
+            <Box sx={{ flex: 1, height: '1px', background: 'linear-gradient(90deg, transparent, rgba(245, 158, 11, 0.2), transparent)' }} />
+          </Box>
 
-          {/* Players - Bottom */}
-          <Box>
-            <Typography variant="h6" sx={{ color: '#4CAF50', mb: 2 }}>
-              Your Party
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-              {players.map(player => {
-                const isThisPlayersTurn = currentCharacter?.id === player.id;
-                const canAct = isThisPlayersTurn && player.id === myPlayer?.id && !fightState.isOver;
-
-                return (
-                  <CharacterCard
-                    key={player.id}
-                    character={player}
-                    isCurrentTurn={isThisPlayersTurn}
-                    onAction={handleAction}
-                    showActions={canAct}
-                    onOpenSkills={() => handleOpenSkills(player)}
-                    ownedSkillCount={player.ownedSkillIds?.length || 0}
-                    perkPoints={player.perkPoints || 0}
-                  />
-                );
-              })}
+          {/* Player Zone */}
+          <Box
+            sx={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'flex-start',
+              pt: 1.5,
+              px: 1,
+            }}
+          >
+            <Box
+              sx={{
+                display: 'flex',
+                gap: { xs: 2, sm: 3 },
+                alignItems: 'flex-start',
+                justifyContent: 'center',
+                flexWrap: 'wrap',
+              }}
+            >
+              {players.map(player => (
+                <BattleCharacter
+                  key={player.id}
+                  character={player}
+                  isCurrentTurn={currentCharacter?.id === player.id}
+                  isEnemy={false}
+                  onClick={() => handleOpenSkills(player)}
+                  isBeingHit={hitTargets.has(player.id)}
+                />
+              ))}
             </Box>
           </Box>
         </Box>
-
-        {/* Action Popover */}
-        <ActionPopover
-          open={!!pendingAction}
-          actionResult={pendingAction?.result}
-          attacker={pendingAction?.attacker || null}
-          allCharacters={pendingAction?.allCharacters || []}
-          onContinue={handleContinue}
-        />
-
-        {/* Game Log */}
-        <GameLog logs={logs} open={showLog} onToggle={() => setShowLog(!showLog)} />
-
-        {/* Skill Tree Dialog */}
-        {selectedCharacterForSkills && (
-          <SkillTreeDialog
-            open={skillTreeOpen}
-            onClose={handleCloseSkills}
-            characterClass={selectedCharacterForSkills.class}
-            characterLevel={selectedCharacterForSkills.level || 1}
-            ownedSkillIds={selectedCharacterForSkills.ownedSkillIds || []}
-            perkPoints={selectedCharacterForSkills.perkPoints || 0}
-            onUnlockSkill={() => {}}
-          />
-        )}
-
-        {showAdmin && (
-          <AdminModal
-            gameState={gameState}
-            dungeons={dungeons}
-            onClose={() => setShowAdmin(false)}
-            fetchState={fetchState}
-            onCrippleBoss={handleCrippleBoss}
-          />
-        )}
       </Box>
-    </ThemeProvider>
+
+      {/* Action Bar */}
+      <BattleActionBar
+        isMyTurn={isMyTurn && !isAnimating}
+        currentCharacter={currentCharacter}
+        myPlayer={myPlayer}
+        fightOver={fightState.isOver}
+        fightResult={fightState.result}
+        onAction={handleAction}
+        onRetry={handleRetryFight}
+        posting={posting || isAnimating}
+      />
+
+      {/* Battle Feedback Overlay (beams, banner, combat text) */}
+      <BattleFeedback
+        animation={activeAnim}
+        showImpact={showImpact}
+      />
+
+      {/* Action Popover (player action dialog) */}
+      <ActionPopover
+        open={!!pendingAction}
+        actionResult={pendingAction?.result}
+        attacker={pendingAction?.attacker || null}
+        allCharacters={pendingAction?.allCharacters || []}
+        onContinue={handleContinue}
+      />
+
+      {/* Game Log */}
+      <GameLog logs={logs} open={showLog} onToggle={() => setShowLog(!showLog)} />
+
+      {/* Skill Tree Dialog */}
+      {selectedCharacterForSkills && (
+        <SkillTreeDialog
+          open={skillTreeOpen}
+          onClose={handleCloseSkills}
+          characterClass={selectedCharacterForSkills.class}
+          characterLevel={selectedCharacterForSkills.level || 1}
+          ownedSkillIds={selectedCharacterForSkills.ownedSkillIds || []}
+          perkPoints={0}
+          onUnlockSkill={() => {}}
+          readOnly
+        />
+      )}
+
+      {showAdmin && (
+        <AdminModal
+          gameState={gameState}
+          dungeons={dungeons}
+          onClose={() => setShowAdmin(false)}
+          fetchState={fetchState}
+          onCrippleBoss={handleCrippleBoss}
+          onOpenLog={() => setShowLog(true)}
+        />
+      )}
+    </Box>
   );
 }

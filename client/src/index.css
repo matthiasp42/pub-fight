@@ -12,8 +12,9 @@ html, body, #root {
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-  color: #fff;
+  color: #f5f0e8;
   min-height: 100vh;
+  background-attachment: fixed;
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
   user-select: none;

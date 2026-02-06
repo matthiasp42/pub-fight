@@ -1,6 +1,9 @@
 import { TARGET_TYPES, EFFECT_TYPES, CHARACTER_TYPES } from './types.js';
 import { createMinionForBoss } from './random.js';
 
+// Max minions alive at once per boss
+const MAX_MINIONS = 3;
+
 /**
  * Deep clone a fight state
  * @param {import('./types.js').FightState} state
@@ -70,17 +73,13 @@ export function getEnemies(state) {
  * @returns {{ target: import('./types.js').Character | null, roll: number, sectors: object[] }}
  */
 export function spinWheel(state, attacker, potentialTargets) {
-  // Build wheel sectors based on evasiveness
-  // Higher evasiveness = smaller sector
-  // Attacker's dexterity determines empty sector size
-
   const sectors = [];
   let currentAngle = 0;
 
   // Empty sector (miss) - size based on attacker's dexterity
   // High dexterity (100) = 5% miss, Low dexterity (0) = 40% miss
   const missChance = 0.4 - (attacker.attributes.dexterity / 100) * 0.35;
-  const missSectorSize = missChance * 360;
+  const missSectorSize = Math.max(0, missChance * 360);
 
   sectors.push({
     type: 'miss',
@@ -94,9 +93,9 @@ export function spinWheel(state, attacker, potentialTargets) {
   const remainingAngle = 360 - missSectorSize;
 
   // Calculate weights (inverse of evasiveness)
+  // Negative evasiveness (from Provoke) gives weight > 1.0 = bigger target
   const weights = potentialTargets.map((t) => {
-    // High evasiveness (100) = weight 0.1, Low evasiveness (0) = weight 1
-    return 1 - (t.attributes.evasiveness / 100) * 0.9;
+    return Math.max(0.05, 1 - (t.attributes.evasiveness / 100) * 0.9);
   });
   const totalWeight = weights.reduce((sum, w) => sum + w, 0);
 
@@ -146,7 +145,6 @@ export function calculateDamage(target, damage, piercing = false) {
   let shieldAbsorbed = 0;
 
   // Each shield point absorbs up to shieldStrength damage
-  // Any attack destroys at least 1 shield point
   while (remainingDamage > 0 && target.state.shield - shieldPointsDestroyed > 0) {
     const absorbed = Math.min(shieldStrength, remainingDamage);
     shieldAbsorbed += absorbed;
@@ -154,7 +152,6 @@ export function calculateDamage(target, damage, piercing = false) {
     shieldPointsDestroyed++;
   }
 
-  // Ensure at least 1 shield is destroyed if we had shields
   if (shieldPointsDestroyed === 0 && target.state.shield > 0) {
     shieldPointsDestroyed = 1;
   }
@@ -167,12 +164,34 @@ export function calculateDamage(target, damage, piercing = false) {
 }
 
 /**
+ * Get the effective AP cost of an action considering passives
+ * @param {import('./types.js').Character} actor
+ * @param {import('./types.js').Action} action
+ * @returns {number}
+ */
+export function getEffectiveCost(actor, action) {
+  let cost = action.cost;
+
+  // Arcane Mastery: all abilities cost 1 less AP (min 1)
+  if (actor.passives && action.id !== 'attack' && action.id !== 'shield' && action.id !== 'rest') {
+    for (const passive of actor.passives) {
+      if (passive.trigger === 'always' && passive.effect.type === 'modifyAbilityCost') {
+        cost = Math.max(1, cost + passive.effect.amount);
+      }
+    }
+  }
+
+  return cost;
+}
+
+/**
  * Apply a single effect to a character
  * @param {import('./types.js').Character} character
  * @param {import('./types.js').Effect} effect
+ * @param {import('./types.js').Character} [attacker] - The character applying the effect (for power bonus)
  * @returns {import('./types.js').EffectResult}
  */
-export function applyEffect(character, effect) {
+export function applyEffect(character, effect, attacker) {
   const result = {
     type: effect.type,
     amount: effect.amount,
@@ -183,19 +202,67 @@ export function applyEffect(character, effect) {
 
   switch (effect.type) {
     case EFFECT_TYPES.DAMAGE: {
+      let totalDamage = effect.amount;
+
+      // Add attacker's power to damage
+      if (attacker && attacker.attributes.power) {
+        totalDamage += attacker.attributes.power;
+      }
+
+      // Glass Cannon: +1 damage on all abilities (attacker has it)
+      if (attacker && attacker.passives) {
+        for (const passive of attacker.passives) {
+          if (passive.trigger === 'always' && passive.effect.type === 'glassCannon') {
+            totalDamage += passive.effect.amount;
+          }
+        }
+      }
+
+      // Apply passive damage reduction from target (Iron Skin)
+      if (character.passives) {
+        for (const passive of character.passives) {
+          if (passive.trigger === 'always' && passive.effect.type === 'damageReduction') {
+            totalDamage = Math.max(0, totalDamage - passive.effect.amount);
+          }
+        }
+      }
+
+      // Glass Cannon: +1 damage taken (target has it)
+      if (character.passives) {
+        for (const passive of character.passives) {
+          if (passive.trigger === 'always' && passive.effect.type === 'glassCannon') {
+            totalDamage += passive.effect.amount;
+          }
+        }
+      }
+
+      totalDamage = Math.max(0, totalDamage);
+
       const damageResult = calculateDamage(
         character,
-        effect.amount,
+        totalDamage,
         effect.piercing
       );
       character.state.shield -= damageResult.shieldPointsDestroyed;
       character.state.health -= damageResult.healthDamage;
       character.state.health = Math.max(0, character.state.health);
 
-      if (character.state.health <= 0) {
+      // Check for onFatalDamage passives before marking dead
+      if (character.state.health <= 0 && character.passives) {
+        const undying = character.passives.find(
+          p => p.trigger === 'onFatalDamage' && p.effect.type === 'surviveFatal' && !p.used
+        );
+        if (undying) {
+          character.state.health = 1;
+          undying.used = true;
+        } else {
+          character.state.isAlive = false;
+        }
+      } else if (character.state.health <= 0) {
         character.state.isAlive = false;
       }
 
+      result.amount = totalDamage;
       result.shieldDamageAbsorbed = damageResult.shieldAbsorbed;
       result.healthDamage = damageResult.healthDamage;
       result.shieldPointsDestroyed = damageResult.shieldPointsDestroyed;
@@ -203,8 +270,19 @@ export function applyEffect(character, effect) {
     }
 
     case EFFECT_TYPES.HEAL: {
-      const healAmount = Math.min(
-        effect.amount,
+      let healAmount = effect.amount;
+
+      // Brew Mastery: heals +N extra
+      if (attacker && attacker.passives) {
+        for (const passive of attacker.passives) {
+          if (passive.trigger === 'always' && passive.effect.type === 'healBonus') {
+            healAmount += passive.effect.amount;
+          }
+        }
+      }
+
+      healAmount = Math.min(
+        healAmount,
         character.attributes.maxHealth - character.state.health
       );
       character.state.health += healAmount;
@@ -213,8 +291,22 @@ export function applyEffect(character, effect) {
     }
 
     case EFFECT_TYPES.ADD_SHIELD: {
-      const shieldAmount = Math.min(
-        effect.amount,
+      let shieldAmount = effect.amount;
+
+      // Last Stand: shield gains doubled below 25% HP
+      if (character.passives) {
+        const hpPct = (character.state.health / character.attributes.maxHealth) * 100;
+        for (const passive of character.passives) {
+          if (passive.trigger === 'always' && passive.effect.type === 'modifyShieldGain' && passive.effect.condition?.hpBelow) {
+            if (hpPct < passive.effect.condition.hpBelow) {
+              shieldAmount *= passive.effect.amount;
+            }
+          }
+        }
+      }
+
+      shieldAmount = Math.min(
+        shieldAmount,
         character.attributes.shieldCapacity - character.state.shield
       );
       character.state.shield += shieldAmount;
@@ -240,9 +332,41 @@ export function applyEffect(character, effect) {
     }
 
     case EFFECT_TYPES.SPAWN_MINION: {
-      // Minion spawning is handled at the action execution level,
-      // not in applyEffect. This is just a placeholder to prevent errors.
+      // Handled at the action execution level
       result.amount = effect.minionCount || 1;
+      break;
+    }
+
+    case EFFECT_TYPES.REVIVE: {
+      // Revive a dead character: set alive, then heal to amount
+      if (!character.state.isAlive) {
+        character.state.isAlive = true;
+        character.state.health = Math.min(effect.amount, character.attributes.maxHealth);
+        character.state.ap = 0;
+        result.amount = character.state.health;
+      } else {
+        // Already alive — treat as heal
+        const healAmt = Math.min(
+          effect.amount,
+          character.attributes.maxHealth - character.state.health
+        );
+        character.state.health += healAmt;
+        result.amount = healAmt;
+      }
+      break;
+    }
+
+    case EFFECT_TYPES.MODIFY_ATTRIBUTE: {
+      // Directly modify a target's attribute (e.g., dexterity, evasiveness, power)
+      const attr = effect.attribute;
+      if (attr && attr in character.attributes) {
+        character.attributes[attr] += effect.amount;
+        // Don't let power go below 0
+        if (attr === 'power') {
+          character.attributes[attr] = Math.max(0, character.attributes[attr]);
+        }
+      }
+      result.amount = effect.amount;
       break;
     }
   }
@@ -271,7 +395,6 @@ export function resolveTargets(state, actor, action, manualTargetId) {
     }
 
     case TARGET_TYPES.RANDOM: {
-      // Determine potential targets (enemies for players, players for enemies)
       const isPlayerAction = actor.type === CHARACTER_TYPES.PLAYER;
       const potentialTargets = isPlayerAction
         ? getEnemies(state)
@@ -310,7 +433,8 @@ export function canExecuteAction(actor, action) {
     return { canExecute: false, reason: 'Character is dead' };
   }
 
-  if (actor.state.ap < action.cost) {
+  const cost = getEffectiveCost(actor, action);
+  if (actor.state.ap < cost) {
     return { canExecute: false, reason: 'Not enough AP' };
   }
 
@@ -320,6 +444,11 @@ export function canExecuteAction(actor, action) {
     actor.state.shield >= actor.attributes.shieldCapacity
   ) {
     return { canExecute: false, reason: 'Shield at max capacity' };
+  }
+
+  // Once-per-fight abilities
+  if (action.usesRemaining !== undefined && action.usesRemaining <= 0) {
+    return { canExecute: false, reason: 'No uses remaining this fight' };
   }
 
   return { canExecute: true };
@@ -356,9 +485,15 @@ export function executeAction(state, actorId, actionId, manualTargetId) {
     return { newState: state, result };
   }
 
-  // 1. Deduct AP cost
-  actor.state.ap -= action.cost;
-  result.apDeducted = action.cost;
+  // 1. Deduct effective AP cost
+  const cost = getEffectiveCost(actor, action);
+  actor.state.ap -= cost;
+  result.apDeducted = cost;
+
+  // Track once-per-fight usage
+  if (action.usesRemaining !== undefined) {
+    action.usesRemaining--;
+  }
 
   // 2. Resolve targets
   const { targets, wheelResults } = resolveTargets(
@@ -369,7 +504,7 @@ export function executeAction(state, actorId, actionId, manualTargetId) {
   );
   result.wheelResults = wheelResults;
 
-  // 3. Apply effects to targets
+  // 3. Apply effects to targets (pass actor for power bonus)
   for (const target of targets) {
     const targetResult = {
       targetId: target.id,
@@ -379,8 +514,46 @@ export function executeAction(state, actorId, actionId, manualTargetId) {
     };
 
     for (const effect of action.effects) {
-      const effectResult = applyEffect(target, effect);
+      const effectResult = applyEffect(target, effect, actor);
       targetResult.effects.push(effectResult);
+
+      // Check onTakeDamage passives (reflect damage, desperation shield)
+      if (effect.type === EFFECT_TYPES.DAMAGE && target.passives && target.state.isAlive) {
+        for (const passive of target.passives) {
+          if (passive.trigger !== 'onTakeDamage') continue;
+
+          if (passive.effect.type === 'reflectDamage') {
+            const reflectDmg = passive.effect.amount;
+            actor.state.health = Math.max(0, actor.state.health - reflectDmg);
+            if (actor.state.health <= 0) {
+              actor.state.isAlive = false;
+            }
+          }
+
+          if (passive.effect.type === 'gainShield' && passive.effect.condition?.hpBelow) {
+            const hpPct = (target.state.health / target.attributes.maxHealth) * 100;
+            if (hpPct < passive.effect.condition.hpBelow) {
+              const shieldGain = Math.min(
+                passive.effect.amount,
+                target.attributes.shieldCapacity - target.state.shield
+              );
+              target.state.shield += shieldGain;
+            }
+          }
+        }
+      }
+
+      // Check onKill passives
+      if (effect.type === EFFECT_TYPES.DAMAGE && !target.state.isAlive && actor.passives) {
+        for (const passive of actor.passives) {
+          if (passive.trigger === 'onKill' && passive.effect.type === 'restoreAP') {
+            actor.state.ap = Math.min(
+              actor.attributes.maxAP,
+              actor.state.ap + passive.effect.amount
+            );
+          }
+        }
+      }
     }
 
     result.targetResults.push(targetResult);
@@ -398,26 +571,28 @@ export function executeAction(state, actorId, actionId, manualTargetId) {
   }
 
   for (const effect of action.selfEffects) {
-    // Handle drain healing - heal equals damage dealt
+    // Handle drain healing
     if (effect.type === EFFECT_TYPES.HEAL && effect.drain) {
       const drainHealEffect = { ...effect, amount: totalDamageDealt };
-      const effectResult = applyEffect(actor, drainHealEffect);
+      const effectResult = applyEffect(actor, drainHealEffect, actor);
       result.selfResults.push(effectResult);
     }
-    // Handle minion spawning
+    // Handle minion spawning (with cap)
     else if (effect.type === EFFECT_TYPES.SPAWN_MINION) {
-      const minionCount = effect.minionCount || 1;
+      const currentMinions = newState.characters.filter(
+        c => c.type === CHARACTER_TYPES.MINION && c.state.isAlive
+      ).length;
+      const maxToSpawn = Math.max(0, MAX_MINIONS - currentMinions);
+      const minionCount = Math.min(effect.minionCount || 1, maxToSpawn);
       const spawnedMinions = [];
 
       for (let i = 0; i < minionCount; i++) {
         const minion = createMinionForBoss(actor.bossId);
-        // Initialize minion state
         minion.state.health = minion.attributes.maxHealth;
         minion.state.ap = minion.attributes.maxAP;
         minion.state.shield = 0;
         minion.state.isAlive = true;
 
-        // Add minion to the fight
         newState.characters.push(minion);
         newState.turnOrder.push(minion.id);
         spawnedMinions.push(minion);
@@ -432,8 +607,21 @@ export function executeAction(state, actorId, actionId, manualTargetId) {
     }
     // Normal self effect
     else {
-      const effectResult = applyEffect(actor, effect);
+      const effectResult = applyEffect(actor, effect, actor);
       result.selfResults.push(effectResult);
+    }
+  }
+
+  // 5. Second Wind: if this was a Rest action, heal the actor
+  if (actionId === 'rest' && actor.passives) {
+    for (const passive of actor.passives) {
+      if (passive.trigger === 'always' && passive.effect.type === 'secondWind') {
+        const healAmt = Math.min(
+          passive.effect.amount,
+          actor.attributes.maxHealth - actor.state.health
+        );
+        actor.state.health += healAmt;
+      }
     }
   }
 
@@ -484,5 +672,13 @@ export function advanceTurn(state) {
   }
 
   newState.currentTurnIndex = nextIndex;
+
+  // Bosses and minions get AP refill each turn (players must manage AP via Rest)
+  const nextCharacter = getCharacter(newState, newState.turnOrder[nextIndex]);
+  if (nextCharacter && nextCharacter.state.isAlive &&
+      (nextCharacter.type === CHARACTER_TYPES.BOSS || nextCharacter.type === CHARACTER_TYPES.MINION)) {
+    nextCharacter.state.ap = nextCharacter.attributes.maxAP;
+  }
+
   return newState;
 }

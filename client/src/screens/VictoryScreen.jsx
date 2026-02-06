@@ -37,7 +37,7 @@ export function VictoryScreen({ gameState, myPlayer, fetchState }) {
             <div style={styles.statRow}>
               <span>HP: {player.attributes.maxHealth}</span>
               <span>AP: {player.attributes.maxAP}</span>
-              <span>STR: {player.attributes.strength}</span>
+              <span>POW: {player.attributes.power}</span>
             </div>
             <div style={styles.statRow}>
               <span>DEX: {player.attributes.dexterity}</span>

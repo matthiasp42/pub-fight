@@ -4,6 +4,7 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { api } from '../api/client';
 import { haversineDistance, hasGpsCoords } from '../utils/geo';
 import { AdminModal } from '../components/AdminModal';
+import { PartyDialog } from '../components/PartyDialog';
 
 const ARCHETYPE_LABELS = {
   swarmMaster: 'Swarm Master',
@@ -51,11 +52,18 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
   const [gpsError, setGpsError] = useState(null);
   const [entering, setEntering] = useState(null);
   const [showAdmin, setShowAdmin] = useState(false);
+  const [showParty, setShowParty] = useState(false);
   const [error, setError] = useState('');
   const [mapReady, setMapReady] = useState(false);
 
   const dungeons = gameState?.dungeons || [];
   const clearedDungeons = gameState?.clearedDungeons || [];
+
+  // Refs for values needed by Mapbox popup closures (avoids stale closures)
+  const positionRef = useRef(position);
+  positionRef.current = position;
+  const clearedRef = useRef(clearedDungeons);
+  clearedRef.current = clearedDungeons;
   const gpsEnabled = hasGpsCoords(dungeons);
 
   // Fetch boss definitions once
@@ -126,13 +134,25 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
         markersRef.current[dungeon.id] = { marker, el };
         existing = markersRef.current[dungeon.id];
 
-        el.addEventListener('click', () => {
+        const showPopup = () => {
           popupRef.current?.remove();
           const popup = new mapboxgl.Popup({ offset: 25, closeButton: true, maxWidth: '260px', className: 'dungeon-popup' })
             .setLngLat([dungeon.lng, dungeon.lat])
             .setDOMContent(buildPopupContent(dungeon))
             .addTo(map.current);
           popupRef.current = popup;
+        };
+
+        // Desktop
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          showPopup();
+        });
+        // Mobile: touchend is more reliable than click (small finger movement cancels click)
+        el.addEventListener('touchend', (e) => {
+          e.stopPropagation();
+          e.preventDefault(); // prevent subsequent click from double-firing
+          showPopup();
         });
       } else {
         existing.el.innerHTML = makeMarkerSVG(dungeon.level, isCleared, enterable);
@@ -166,9 +186,11 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
   }, [mapReady, dungeons, clearedDungeons, position, gpsEnabled]);
 
   function buildPopupContent(dungeon) {
-    const isCleared = clearedDungeons.includes(dungeon.id);
-    const dist = position && gpsEnabled
-      ? haversineDistance(position.lat, position.lng, dungeon.lat, dungeon.lng)
+    const pos = positionRef.current;
+    const cleared = clearedRef.current;
+    const isCleared = cleared.includes(dungeon.id);
+    const dist = pos && gpsEnabled
+      ? haversineDistance(pos.lat, pos.lng, dungeon.lat, dungeon.lng)
       : null;
     const enterable = !isCleared && (!gpsEnabled || dist === null || dist <= dungeon.radiusMeters);
     const boss = bossesRef.current?.[dungeon.bossId];
@@ -200,7 +222,7 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
         <div style="font-size:0.8em;color:#6b5030;font-style:italic;margin:2px 0 4px;">${archLabel}</div>
         <div style="display:flex;gap:8px;font-size:0.75em;color:#5a4a3a;margin-bottom:4px;">
           <span title="Health">&#9829; ${boss.attributes.maxHealth}</span>
-          <span title="Strength">&#9876; ${boss.attributes.strength}</span>
+          <span title="Power">&#9876; ${boss.attributes.power}</span>
           <span title="Action Points">&#9733; ${boss.attributes.maxAP} AP</span>
         </div>
         <div style="font-size:0.7em;color:#7a6a5a;">${topAbilities}</div>
@@ -325,6 +347,9 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
           <span style={styles.clearedLabel}>
             {clearedDungeons.length}/7
           </span>
+          <button style={styles.adminButton} onClick={() => setShowParty(true)}>
+            Party
+          </button>
           <button style={styles.adminButton} onClick={() => setShowAdmin(true)}>
             Admin
           </button>
@@ -380,6 +405,13 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
           </div>
         </>
       )}
+
+      <PartyDialog
+        open={showParty}
+        onClose={() => setShowParty(false)}
+        players={gameState?.players ? Object.values(gameState.players) : []}
+        myPlayerId={myPlayer?.id}
+      />
 
       {showAdmin && (
         <AdminModal

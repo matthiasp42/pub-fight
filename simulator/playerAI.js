@@ -6,6 +6,7 @@
  */
 
 import { CHARACTER_TYPES, EFFECT_TYPES, TARGET_TYPES } from '../client/src/game/types.js';
+import { getEffectiveCost } from '../client/src/game/engine.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -13,9 +14,12 @@ import { CHARACTER_TYPES, EFFECT_TYPES, TARGET_TYPES } from '../client/src/game/
 
 function getAffordableActions(actor) {
   return actor.actions.filter(a => {
-    if (a.cost > actor.state.ap) return false;
+    const cost = getEffectiveCost(actor, a);
+    if (cost > actor.state.ap) return false;
     // Shield at max capacity is useless
     if (a.id === 'shield' && actor.state.shield >= actor.attributes.shieldCapacity) return false;
+    // Once-per-fight used up
+    if (a.usesRemaining !== undefined && a.usesRemaining <= 0) return false;
     return true;
   });
 }
@@ -29,9 +33,21 @@ function isHealAction(action) {
     action.selfEffects.some(e => e.type === EFFECT_TYPES.HEAL);
 }
 
+function isReviveAction(action) {
+  return action.effects.some(e => e.type === EFFECT_TYPES.REVIVE);
+}
+
 function isShieldAction(action) {
   return action.selfEffects.some(e => e.type === EFFECT_TYPES.ADD_SHIELD) ||
     action.effects.some(e => e.type === EFFECT_TYPES.ADD_SHIELD);
+}
+
+function isAPAction(action) {
+  return action.effects.some(e => e.type === EFFECT_TYPES.MODIFY_AP && e.amount > 0);
+}
+
+function isDebuffAction(action) {
+  return action.effects.some(e => e.type === EFFECT_TYPES.MODIFY_ATTRIBUTE && e.amount < 0);
 }
 
 function expectedDamage(action) {
@@ -54,25 +70,45 @@ function hpPercent(character) {
   return character.state.health / character.attributes.maxHealth;
 }
 
-/** Pick a manual target: boss for damage, lowest-HP ally for heals */
+/** Pick a manual target based on action type */
 function pickManualTarget(action, state, actor) {
-  if (isDamageAction(action)) {
-    // Target the boss preferably, else any alive enemy
-    const enemies = state.characters.filter(
-      c => (c.type === CHARACTER_TYPES.BOSS || c.type === CHARACTER_TYPES.MINION) && c.state.isAlive
+  // Revive: target dead ally
+  if (isReviveAction(action)) {
+    const deadAllies = state.characters.filter(
+      c => c.type === CHARACTER_TYPES.PLAYER && !c.state.isAlive
     );
-    // Prefer boss over minions
-    return enemies.find(e => e.type === CHARACTER_TYPES.BOSS)?.id ||
-      enemies[0]?.id || null;
+    return deadAllies[0]?.id || null;
   }
+
+  // Heal or AP buff: target lowest-HP or lowest-AP ally
   if (isHealAction(action)) {
-    // Heal lowest-HP alive ally
     const allies = state.characters.filter(
       c => c.type === CHARACTER_TYPES.PLAYER && c.state.isAlive
     );
     allies.sort((a, b) => hpPercent(a) - hpPercent(b));
     return allies[0]?.id || null;
   }
+
+  if (isAPAction(action)) {
+    // Give AP to the ally with best damage potential (not self unless alone)
+    const allies = state.characters.filter(
+      c => c.type === CHARACTER_TYPES.PLAYER && c.state.isAlive && c.id !== actor.id
+    );
+    if (allies.length === 0) return actor.id;
+    // Prefer allies with low AP who have good skills
+    allies.sort((a, b) => a.state.ap - b.state.ap);
+    return allies[0]?.id || actor.id;
+  }
+
+  if (isDamageAction(action)) {
+    // Target the boss preferably, else any alive enemy
+    const enemies = state.characters.filter(
+      c => (c.type === CHARACTER_TYPES.BOSS || c.type === CHARACTER_TYPES.MINION) && c.state.isAlive
+    );
+    return enemies.find(e => e.type === CHARACTER_TYPES.BOSS)?.id ||
+      enemies[0]?.id || null;
+  }
+
   // Default: target self
   return actor.id;
 }
@@ -85,16 +121,12 @@ function chooseAggressive(actor, state) {
   const actions = getAffordableActions(actor);
   if (actions.length === 0) return null;
 
-  // Pick highest-damage action, ignore heals/shields
+  // Pick highest-damage action
   const damageActions = actions.filter(isDamageAction);
   if (damageActions.length > 0) {
     damageActions.sort((a, b) => expectedDamage(b) - expectedDamage(a));
     return damageActions[0];
   }
-
-  // No damage actions affordable — rest to get AP back
-  const rest = actions.find(a => a.id === 'rest');
-  if (rest) return rest;
 
   return actions[0];
 }
@@ -103,9 +135,36 @@ function chooseBalanced(actor, state) {
   const actions = getAffordableActions(actor);
   if (actions.length === 0) return null;
 
+  // Revive dead allies first (high priority)
+  const deadAllies = state.characters.filter(
+    c => c.type === CHARACTER_TYPES.PLAYER && !c.state.isAlive
+  );
+  if (deadAllies.length > 0) {
+    const revive = actions.find(isReviveAction);
+    if (revive) return revive;
+  }
+
+  // Use debuffs early if available (they're limited use, use them)
+  const debuffs = actions.filter(isDebuffAction);
+  if (debuffs.length > 0) {
+    return debuffs[0];
+  }
+
   // Heal if below 30% HP
   if (hpPercent(actor) < 0.3) {
     const heals = actions.filter(isHealAction);
+    if (heals.length > 0) {
+      heals.sort((a, b) => expectedHeal(b) - expectedHeal(a));
+      return heals[0];
+    }
+  }
+
+  // Heal allies below 30% HP (for support classes)
+  const woundedAlly = state.characters.find(
+    c => c.type === CHARACTER_TYPES.PLAYER && c.state.isAlive && hpPercent(c) < 0.3
+  );
+  if (woundedAlly) {
+    const heals = actions.filter(a => isHealAction(a) && a.targetType === TARGET_TYPES.MANUAL);
     if (heals.length > 0) {
       heals.sort((a, b) => expectedHeal(b) - expectedHeal(a));
       return heals[0];
@@ -123,16 +182,21 @@ function chooseBalanced(actor, state) {
   const attack = actions.find(a => a.id === 'attack');
   if (attack) return attack;
 
-  // Rest when out of AP
-  const rest = actions.find(a => a.id === 'rest');
-  if (rest) return rest;
-
   return actions[0];
 }
 
 function chooseDefensive(actor, state) {
   const actions = getAffordableActions(actor);
   if (actions.length === 0) return null;
+
+  // Revive dead allies first
+  const deadAllies = state.characters.filter(
+    c => c.type === CHARACTER_TYPES.PLAYER && !c.state.isAlive
+  );
+  if (deadAllies.length > 0) {
+    const revive = actions.find(isReviveAction);
+    if (revive) return revive;
+  }
 
   // Shield first if not at capacity
   if (actor.state.shield < actor.attributes.shieldCapacity) {
@@ -159,9 +223,6 @@ function chooseDefensive(actor, state) {
     damageActions.sort((a, b) => expectedDamage(b) - expectedDamage(a));
     return damageActions[0];
   }
-
-  const rest = actions.find(a => a.id === 'rest');
-  if (rest) return rest;
 
   return actions[0];
 }

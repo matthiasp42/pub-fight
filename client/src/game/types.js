@@ -3,7 +3,7 @@
  *
  * @typedef {'player' | 'boss' | 'minion'} CharacterType
  * @typedef {'self' | 'manual' | 'random' | 'allParty' | 'allEnemies'} TargetType
- * @typedef {'damage' | 'heal' | 'addShield' | 'modifyAP' | 'spawnMinion' | 'removeShield'} EffectType
+ * @typedef {'damage' | 'heal' | 'addShield' | 'modifyAP' | 'spawnMinion' | 'removeShield' | 'revive' | 'modifyAttribute'} EffectType
  * @typedef {'swarmMaster' | 'executioner' | 'devastator' | 'tankBuster' | 'tempoManipulator' | 'regenerator' | 'hybridNightmare'} BossArchetype
  */
 
@@ -14,6 +14,7 @@
  * @property {boolean} [piercing] - Only for damage effects
  * @property {boolean} [drain] - For heal effects: heal equals damage dealt
  * @property {number} [minionCount] - For spawnMinion effects: number of minions to spawn
+ * @property {string} [attribute] - For modifyAttribute effects: which attribute to change
  */
 
 /**
@@ -31,7 +32,7 @@
  * @typedef {Object} CharacterAttributes
  * @property {number} maxHealth
  * @property {number} maxAP
- * @property {number} strength
+ * @property {number} power
  * @property {number} shieldCapacity
  * @property {number} shieldStrength
  * @property {number} dexterity - 0-100, higher = more accurate
@@ -124,6 +125,8 @@ export const EFFECT_TYPES = {
   MODIFY_AP: 'modifyAP',
   SPAWN_MINION: 'spawnMinion',
   REMOVE_SHIELD: 'removeShield',
+  REVIVE: 'revive',
+  MODIFY_ATTRIBUTE: 'modifyAttribute',
 };
 
 export const CHARACTER_TYPES = {
@@ -141,7 +144,7 @@ export const CHARACTER_TYPES = {
  */
 
 /**
- * @typedef {'damageReduction' | 'reflectDamage' | 'modifyShieldGain' | 'modifyDamage' | 'restoreAP' | 'modifyAbilityCost' | 'modifyMaxAP' | 'modifyShieldCapacity' | 'modifyShieldStrength' | 'surviveFatal'} PassiveEffectType
+ * @typedef {'damageReduction' | 'reflectDamage' | 'modifyShieldGain' | 'modifyDamage' | 'restoreAP' | 'modifyAbilityCost' | 'modifyMaxAP' | 'modifyShieldCapacity' | 'modifyShieldStrength' | 'surviveFatal' | 'precision' | 'provoke' | 'glassCannon' | 'healBonus' | 'secondWind' | 'gainShield'} PassiveEffectType
  */
 
 /**

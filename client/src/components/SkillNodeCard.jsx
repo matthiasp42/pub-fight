@@ -1,192 +1,72 @@
-import {
-  Card,
-  CardContent,
-  Typography,
-  Box,
-  Chip,
-  Tooltip,
-} from '@mui/material';
-import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
-import ShieldIcon from '@mui/icons-material/Shield';
-import LockIcon from '@mui/icons-material/Lock';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import { Box, Typography } from '@mui/material';
+import { GiSwordWound, GiShield } from 'react-icons/gi';
+import { LuCheck } from 'react-icons/lu';
 
-/**
- * @param {{
- *   skill: import('../game/types').SkillNode,
- *   status: 'owned' | 'available' | 'locked',
- *   onClick?: () => void,
- *   compact?: boolean
- * }} props
- */
-export function SkillNodeCard({ skill, status, onClick, compact = false }) {
-  const getBorderColor = () => {
-    switch (status) {
-      case 'owned':
-        return '#4CAF50'; // green
-      case 'available':
-        return '#2196F3'; // blue
-      case 'locked':
-      default:
-        return '#666'; // gray
-    }
-  };
+const STATUS_STYLES = {
+  owned: {
+    border: '1.5px solid #4CAF50',
+    bg: 'rgba(76, 175, 80, 0.12)',
+  },
+  available: {
+    border: '1.5px solid #3b82f6',
+    bg: 'rgba(59, 130, 246, 0.12)',
+  },
+  locked: {
+    border: '1.5px solid rgba(168, 160, 149, 0.15)',
+    bg: 'rgba(100, 100, 100, 0.06)',
+  },
+};
 
-  const getBackgroundColor = () => {
-    switch (status) {
-      case 'owned':
-        return 'rgba(76, 175, 80, 0.1)';
-      case 'available':
-        return 'rgba(33, 150, 243, 0.1)';
-      case 'locked':
-      default:
-        return 'rgba(100, 100, 100, 0.1)';
-    }
-  };
+const TYPE_COLORS = {
+  ability: '#f59e0b',
+  passive: '#a855f6',
+};
 
-  const getStatusIcon = () => {
-    switch (status) {
-      case 'owned':
-        return <CheckCircleIcon sx={{ fontSize: 14, color: '#4CAF50' }} />;
-      case 'locked':
-        return <LockIcon sx={{ fontSize: 14, color: '#666' }} />;
-      default:
-        return null;
-    }
-  };
-
-  const getTypeIcon = () => {
-    if (skill.type === 'ability') {
-      return <AutoFixHighIcon sx={{ fontSize: 14, color: '#ff9800' }} />;
-    }
-    return <ShieldIcon sx={{ fontSize: 14, color: '#9c27b0' }} />;
-  };
-
-  const getEffectSummary = () => {
-    if (skill.type === 'ability' && skill.ability) {
-      const { cost, effects, selfEffects } = skill.ability;
-      const parts = [`${cost} AP`];
-
-      effects.forEach((e) => {
-        if (e.type === 'damage') parts.push(`${e.amount} dmg${e.piercing ? ' (pierce)' : ''}`);
-        if (e.type === 'heal') parts.push(`${e.amount} heal`);
-        if (e.type === 'addShield') parts.push(`+${e.amount} shield`);
-        if (e.type === 'modifyAP') parts.push(`${e.amount > 0 ? '+' : ''}${e.amount} AP`);
-      });
-
-      selfEffects.forEach((e) => {
-        if (e.type === 'heal') parts.push(`self +${e.amount} HP`);
-        if (e.type === 'addShield') parts.push(`self +${e.amount} shield`);
-      });
-
-      return parts.join(' | ');
-    }
-
-    if (skill.type === 'passive' && skill.passive) {
-      const { trigger, effect } = skill.passive;
-      const triggerLabels = {
-        always: 'Always',
-        onHit: 'On hit',
-        onTakeDamage: 'When hit',
-        onLowHP: 'Low HP',
-        onTurnStart: 'Turn start',
-        onKill: 'On kill',
-        onFightStart: 'Fight start',
-        onFatalDamage: 'Fatal blow',
-      };
-      return triggerLabels[trigger] || trigger;
-    }
-
-    return '';
-  };
-
-  const cardContent = (
-    <Card
-      sx={{
-        minWidth: compact ? 100 : 140,
-        maxWidth: compact ? 120 : 160,
-        border: `2px solid ${getBorderColor()}`,
-        backgroundColor: getBackgroundColor(),
-        opacity: status === 'locked' ? 0.6 : 1,
-        cursor: status === 'available' && onClick ? 'pointer' : 'default',
-        transition: 'all 0.2s ease',
-        '&:hover': status === 'available' && onClick ? {
-          transform: 'scale(1.02)',
-          boxShadow: 3,
-        } : {},
-      }}
-      onClick={status === 'available' && onClick ? onClick : undefined}
-    >
-      <CardContent sx={{ p: compact ? 1 : 1.5, '&:last-child': { pb: compact ? 1 : 1.5 } }}>
-        {/* Header */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
-          {getTypeIcon()}
-          <Typography
-            variant={compact ? 'caption' : 'body2'}
-            sx={{
-              fontWeight: 'bold',
-              flex: 1,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {skill.name}
-          </Typography>
-          {getStatusIcon()}
-        </Box>
-
-        {/* Effect summary */}
-        {!compact && (
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{
-              display: 'block',
-              fontSize: '0.65rem',
-              lineHeight: 1.2,
-            }}
-          >
-            {getEffectSummary()}
-          </Typography>
-        )}
-
-        {/* Type chip */}
-        <Box sx={{ mt: 0.5 }}>
-          <Chip
-            label={skill.type === 'ability' ? 'Ability' : 'Passive'}
-            size="small"
-            sx={{
-              height: 16,
-              fontSize: '0.6rem',
-              backgroundColor: skill.type === 'ability' ? 'rgba(255, 152, 0, 0.2)' : 'rgba(156, 39, 176, 0.2)',
-            }}
-          />
-        </Box>
-      </CardContent>
-    </Card>
-  );
+export function SkillNodeCard({ skill, status, onClick }) {
+  const s = STATUS_STYLES[status];
 
   return (
-    <Tooltip
-      title={
-        <Box sx={{ p: 0.5 }}>
-          <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-            {skill.name}
-          </Typography>
-          <Typography variant="body2" sx={{ mb: 1 }}>
-            {skill.description}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Level {skill.levelRequired} required
-            {skill.requires && ` | Requires: ${skill.requires.replace(/_/g, ' ')}`}
-          </Typography>
-        </Box>
-      }
-      arrow
-      placement="top"
+    <Box
+      onClick={onClick}
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 0.75,
+        px: 1.25,
+        py: 0.75,
+        borderRadius: '10px',
+        border: s.border,
+        backgroundColor: s.bg,
+        opacity: status === 'locked' ? 0.4 : 1,
+        cursor: 'pointer',
+        transition: 'all 0.15s ease',
+        '&:hover': {
+          opacity: status === 'locked' ? 0.6 : 1,
+          transform: 'scale(1.05)',
+        },
+      }}
     >
-      {cardContent}
-    </Tooltip>
+      <Box sx={{ color: TYPE_COLORS[skill.type], display: 'flex', flexShrink: 0 }}>
+        {skill.type === 'ability'
+          ? <GiSwordWound size={14} />
+          : <GiShield size={14} />
+        }
+      </Box>
+      <Typography
+        sx={{
+          fontSize: '0.78rem',
+          fontWeight: 600,
+          lineHeight: 1.2,
+          color: status === 'locked' ? 'text.secondary' : 'text.primary',
+          maxWidth: 80,
+          textWrap: 'balance',
+        }}
+      >
+        {skill.name}
+      </Typography>
+      {status === 'owned' && (
+        <LuCheck size={12} style={{ color: '#4CAF50', flexShrink: 0 }} />
+      )}
+    </Box>
   );
 }

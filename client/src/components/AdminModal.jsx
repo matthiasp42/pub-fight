@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { api } from '../api/client';
 
-export function AdminModal({ gameState, dungeons, onClose, fetchState, onCrippleBoss }) {
+export function AdminModal({ gameState, dungeons, onClose, fetchState, onCrippleBoss, onOpenLog }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [coordsInput, setCoordsInput] = useState('');
@@ -141,6 +141,15 @@ export function AdminModal({ gameState, dungeons, onClose, fetchState, onCripple
             Apply Coordinates
           </button>
         </div>
+
+        {/* Fight Log */}
+        {onOpenLog && (
+          <div style={styles.section}>
+            <button style={styles.logButton} onClick={() => { onOpenLog(); onClose(); }}>
+              Fight Log
+            </button>
+          </div>
+        )}
 
         {/* Cripple Boss (fight mode only) */}
         {onCrippleBoss && (
@@ -289,6 +298,16 @@ const styles = {
     border: '1px solid #ffa500',
     cursor: 'pointer',
     fontWeight: 'bold',
+  },
+  logButton: {
+    width: '100%',
+    padding: '0.75rem',
+    fontSize: '0.9rem',
+    borderRadius: '8px',
+    background: 'rgba(255,255,255,0.1)',
+    color: '#ccc',
+    border: '1px solid #444',
+    cursor: 'pointer',
   },
   resetButton: {
     width: '100%',

@@ -1,5 +1,5 @@
 export type TargetType = 'self' | 'manual' | 'random' | 'allParty' | 'allEnemies';
-export type EffectType = 'damage' | 'heal' | 'addShield' | 'modifyAP' | 'spawnMinion' | 'removeShield';
+export type EffectType = 'damage' | 'heal' | 'addShield' | 'modifyAP' | 'spawnMinion' | 'removeShield' | 'revive' | 'modifyAttribute';
 export type CharacterClass = 'tank' | 'alchemist' | 'wizard' | 'warrior';
 export type BossArchetype = 'swarmMaster' | 'executioner' | 'devastator' | 'tankBuster' | 'tempoManipulator' | 'regenerator' | 'hybridNightmare';
 export type GamePhase = 'lobby' | 'map' | 'fight' | 'levelup' | 'victory';
@@ -9,9 +9,10 @@ export interface Effect {
     piercing?: boolean;
     drain?: boolean;
     minionCount?: number;
+    attribute?: string;
 }
 export type PassiveTrigger = 'always' | 'onHit' | 'onTakeDamage' | 'onLowHP' | 'onTurnStart' | 'onKill' | 'onFightStart' | 'onFatalDamage';
-export type PassiveEffectType = 'damageReduction' | 'reflectDamage' | 'modifyShieldGain' | 'modifyDamage' | 'restoreAP' | 'modifyAbilityCost' | 'modifyMaxAP' | 'modifyShieldCapacity' | 'modifyShieldStrength' | 'surviveFatal';
+export type PassiveEffectType = 'damageReduction' | 'reflectDamage' | 'modifyShieldGain' | 'modifyDamage' | 'restoreAP' | 'modifyAbilityCost' | 'modifyMaxAP' | 'modifyShieldCapacity' | 'modifyShieldStrength' | 'surviveFatal' | 'precision' | 'provoke' | 'glassCannon' | 'healBonus' | 'secondWind' | 'gainShield';
 export interface PassiveEffect {
     type: PassiveEffectType;
     amount?: number;
@@ -25,6 +26,7 @@ export interface AbilityData {
     hits: number;
     effects: Effect[];
     selfEffects: Effect[];
+    maxUses?: number;
 }
 export interface PassiveData {
     trigger: PassiveTrigger;
@@ -48,7 +50,7 @@ export interface SkillTreeValidation {
 export interface CharacterAttributes {
     maxHealth: number;
     maxAP: number;
-    strength: number;
+    power: number;
     shieldCapacity: number;
     shieldStrength: number;
     dexterity: number;

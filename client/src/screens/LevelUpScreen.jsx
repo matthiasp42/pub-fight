@@ -5,7 +5,7 @@ import { SkillTreeDialog } from '../components/SkillTreeDialog';
 const ATTR_LABELS = {
   maxHealth: { name: 'Max Health', icon: '\u{2764}' },
   maxAP: { name: 'Max AP', icon: '\u{26A1}' },
-  strength: { name: 'Strength', icon: '\u{1F4AA}' },
+  power: { name: 'Power', icon: '\u{1F4AA}' },
   shieldCapacity: { name: 'Shield Cap', icon: '\u{1F6E1}' },
   shieldStrength: { name: 'Shield Str', icon: '\u{1F6E1}' },
   dexterity: { name: 'Dexterity', icon: '\u{1F3AF}' },

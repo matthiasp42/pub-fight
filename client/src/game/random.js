@@ -77,13 +77,13 @@ export function createRandomPlayer(name, characterClass) {
     perkPoints: 1, // Start with 1 perk point at level 1
     ownedSkillIds: [],
     attributes: {
-      maxHealth: randomInRange(80, 120),
-      maxAP: randomInRange(4, 6),
-      strength: randomInRange(8, 15),
-      shieldCapacity: randomInRange(2, 4),
-      shieldStrength: randomInRange(4, 8),
-      dexterity: randomInRange(40, 80),
-      evasiveness: randomInRange(20, 60),
+      maxHealth: randomInRange(10, 16),
+      maxAP: randomInRange(3, 4),
+      power: randomInRange(0, 2),
+      shieldCapacity: randomInRange(1, 3),
+      shieldStrength: randomInRange(2, 3),
+      dexterity: randomInRange(50, 70),
+      evasiveness: randomInRange(15, 30),
     },
     state: {
       health: 0, // Will be set to maxHealth
@@ -195,13 +195,13 @@ export function createRandomMinion(name) {
     name: minionName,
     type: CHARACTER_TYPES.MINION,
     attributes: {
-      maxHealth: randomInRange(30, 60),
-      maxAP: randomInRange(2, 3),
-      strength: randomInRange(5, 10),
-      shieldCapacity: randomInRange(1, 2),
-      shieldStrength: randomInRange(3, 5),
+      maxHealth: randomInRange(3, 6),
+      maxAP: 2,
+      power: 0,
+      shieldCapacity: 0,
+      shieldStrength: 0,
       dexterity: randomInRange(30, 50),
-      evasiveness: randomInRange(30, 50),
+      evasiveness: randomInRange(15, 25),
     },
     state: {
       health: 0,

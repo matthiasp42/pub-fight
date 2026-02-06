@@ -233,7 +233,7 @@ app.post('/api/dungeon-cleared', requireSession, (req: SessionRequest, res: Resp
   // Level up all players
   for (const player of Object.values(gameState.players)) {
     player.level = gameState.clearedDungeons.length + 1;
-    player.attributePoints += 3;
+    player.attributePoints += 2;
     player.perkPoints += 1;
   }
 
@@ -260,7 +260,7 @@ app.post('/api/distribute-attributes', requireSession, (req: SessionRequest, res
 
   // Validate deltas sum to player's available points
   const validAttrs: (keyof CharacterAttributes)[] = [
-    'maxHealth', 'maxAP', 'strength', 'shieldCapacity', 'shieldStrength', 'dexterity', 'evasiveness'
+    'maxHealth', 'maxAP', 'power', 'shieldCapacity', 'shieldStrength', 'dexterity', 'evasiveness'
   ];
 
   let totalSpent = 0;
@@ -398,7 +398,7 @@ app.post('/api/admin/set-cleared', requireSession, (req: SessionRequest, res: Re
   for (const player of Object.values(gameState.players)) {
     player.level = gameState.clearedDungeons.length + 1;
 
-    const totalAttrEarned = (player.level - 1) * 3;
+    const totalAttrEarned = (player.level - 1) * 2;
     const totalPerksEarned = player.level; // 1 at start + 1 per level-up
 
     // Calculate already spent

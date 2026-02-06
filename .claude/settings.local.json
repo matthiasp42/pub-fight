@@ -9,7 +9,16 @@
       "Bash(xargs kill:*)",
       "WebSearch",
       "WebFetch(domain:medium.com)",
-      "WebFetch(domain:docs.stadiamaps.com)"
+      "WebFetch(domain:docs.stadiamaps.com)",
+      "Bash(node -e:*)",
+      "mcp__mui-mcp__fetchDocs",
+      "mcp__mui-mcp__useMuiDocs",
+      "Bash(convert:*)",
+      "Bash(for f in *.png)",
+      "Bash(do echo \"=== $f ===\")",
+      "Bash(sips:*)",
+      "Bash(done)",
+      "mcp__chrome-devtools__list_pages"
     ]
   }
 }

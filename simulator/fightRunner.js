@@ -50,8 +50,26 @@ export function buildFightState(builds, bossLevel) {
   boss.state.ap = boss.attributes.maxAP;
   boss.state.shield = 0;
   boss.state.isAlive = true;
+  boss.passives = [];
 
   const characters = [...players, boss];
+
+  // Apply onFightStart passives (e.g., Philosopher's Stone: all party +1 AP)
+  for (const player of players) {
+    if (!player.passives) continue;
+    for (const passive of player.passives) {
+      if (passive.trigger !== 'onFightStart') continue;
+      if (passive.effect.type === 'restoreAP') {
+        for (const ally of players) {
+          ally.state.ap = Math.min(
+            ally.attributes.maxAP,
+            ally.state.ap + passive.effect.amount
+          );
+        }
+      }
+    }
+  }
+
   const turnOrder = shuffle(characters.map(c => c.id));
 
   return {

@@ -184,7 +184,7 @@ export function createSimPlayer(className, strategyName, skillIds, level, name) 
   const base = CLASS_BASE_ATTRIBUTES[className];
   if (!base) throw new Error(`Unknown class: ${className}`);
 
-  const attrPoints = (level - 1) * 3;
+  const attrPoints = (level - 1) * 2;
   const attributes = distributeAttributes({ ...base }, attrPoints, strategyName);
 
   const character = {
@@ -203,10 +203,66 @@ export function createSimPlayer(className, strategyName, skillIds, level, name) 
       isAlive: true,
     },
     actions: [],
+    passives: [],
   };
 
   // Use the real game function to convert skills to actions
   character.actions = getActionsForCharacter(character, ALL_SKILLS, skillIds);
+
+  // Populate passives from owned skills
+  for (const skillId of skillIds) {
+    const skill = ALL_SKILLS.find(s => s.id === skillId);
+    if (skill && skill.type === 'passive' && skill.passive) {
+      character.passives.push({
+        skillId: skill.id,
+        name: skill.name,
+        trigger: skill.passive.trigger,
+        effect: { ...skill.passive.effect },
+      });
+    }
+  }
+
+  // Apply "always" passives that modify stats
+  for (const passive of character.passives) {
+    if (passive.trigger !== 'always') continue;
+    switch (passive.effect.type) {
+      case 'modifyShieldCapacity':
+        character.attributes.shieldCapacity += passive.effect.amount;
+        // Titan's Resolve also grants +1 shield strength
+        if (passive.skillId === 'titans_resolve') {
+          character.attributes.shieldStrength += 1;
+        }
+        break;
+      case 'modifyShieldStrength':
+        character.attributes.shieldStrength += passive.effect.amount;
+        break;
+      case 'modifyMaxAP':
+        character.attributes.maxAP += passive.effect.amount;
+        character.state.ap = character.attributes.maxAP;
+        character.state.health = character.attributes.maxHealth;
+        break;
+      case 'provoke':
+        character.attributes.evasiveness += passive.effect.amount;
+        break;
+      case 'precision':
+        // Make basic Attack target manually
+        for (const action of character.actions) {
+          if (action.id === 'attack') {
+            action.targetType = 'manual';
+          }
+        }
+        break;
+    }
+  }
+
+  // Initialize once-per-fight ability tracking
+  for (const action of character.actions) {
+    const skill = ALL_SKILLS.find(s => s.id === action.id);
+    if (skill && skill.ability && skill.ability.maxUses) {
+      action.maxUses = skill.ability.maxUses;
+      action.usesRemaining = skill.ability.maxUses;
+    }
+  }
 
   return character;
 }
