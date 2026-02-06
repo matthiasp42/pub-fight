@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { api } from '../api/client';
 
-export function AdminModal({ gameState, dungeons, onClose, fetchState }) {
+export function AdminModal({ gameState, dungeons, onClose, fetchState, onCrippleBoss }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [coordsInput, setCoordsInput] = useState('');
@@ -142,6 +142,15 @@ export function AdminModal({ gameState, dungeons, onClose, fetchState }) {
           </button>
         </div>
 
+        {/* Cripple Boss (fight mode only) */}
+        {onCrippleBoss && (
+          <div style={styles.section}>
+            <button style={styles.crippleButton} onClick={() => { onCrippleBoss(); onClose(); }}>
+              Cripple Boss (Set HP to 1)
+            </button>
+          </div>
+        )}
+
         {/* Reset Game */}
         <div style={styles.section}>
           <button style={styles.resetButton} onClick={handleResetGame}>
@@ -269,6 +278,17 @@ const styles = {
     color: '#ccc',
     border: '1px solid #444',
     cursor: 'pointer',
+  },
+  crippleButton: {
+    width: '100%',
+    padding: '0.75rem',
+    fontSize: '0.9rem',
+    borderRadius: '8px',
+    background: 'rgba(255,165,0,0.15)',
+    color: '#ffa500',
+    border: '1px solid #ffa500',
+    cursor: 'pointer',
+    fontWeight: 'bold',
   },
   resetButton: {
     width: '100%',

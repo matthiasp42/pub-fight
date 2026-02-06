@@ -14,6 +14,7 @@ import { TurnBar } from '../components/TurnBar.jsx';
 import { ActionPopover } from '../components/ActionPopover.jsx';
 import { GameLog } from '../components/GameLog.jsx';
 import { SkillTreeDialog } from '../components/SkillTreeDialog.jsx';
+import { AdminModal } from '../components/AdminModal.jsx';
 import { buildFightFromServer } from '../game/fightSetup.js';
 import {
   executeAction,
@@ -22,6 +23,7 @@ import {
   cloneState,
 } from '../game/engine.js';
 import { CHARACTER_TYPES } from '../game/types.js';
+import { chooseBossAction } from '../game/bossAI.js';
 import { api } from '../api/client.js';
 
 const darkTheme = createTheme({
@@ -41,6 +43,7 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
   const [skillTreeOpen, setSkillTreeOpen] = useState(false);
   const [selectedCharacterForSkills, setSelectedCharacterForSkills] = useState(null);
   const [posting, setPosting] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
   const lastFightVersionRef = useRef(-1);
   const initRef = useRef(false);
 
@@ -146,15 +149,13 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
 
     // Process all consecutive boss/minion turns
     while (actor && actor.type !== CHARACTER_TYPES.PLAYER && !state.isOver) {
-      // Pick a random affordable action
-      const affordableActions = actor.actions.filter(a => a.cost <= actor.state.ap);
-      if (affordableActions.length === 0) {
+      const action = chooseBossAction(actor);
+      if (!action) {
         state = advanceTurn(state);
         actor = getCurrentTurnCharacter(state);
         continue;
       }
 
-      const action = affordableActions[Math.floor(Math.random() * affordableActions.length)];
       const stateBefore = cloneState(state);
       const { newState, result } = executeAction(state, actor.id, action.id);
 
@@ -235,14 +236,13 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
     // Auto-process subsequent boss/minion turns
     let actor = getCurrentTurnCharacter(state);
     while (actor && actor.type !== CHARACTER_TYPES.PLAYER && !state.isOver) {
-      const affordableActions = actor.actions.filter(a => a.cost <= actor.state.ap);
-      if (affordableActions.length === 0) {
+      const action = chooseBossAction(actor);
+      if (!action) {
         state = advanceTurn(state);
         actor = getCurrentTurnCharacter(state);
         continue;
       }
 
-      const action = affordableActions[Math.floor(Math.random() * affordableActions.length)];
       const bossStateBefore = cloneState(state);
       const { newState: bossNewState, result: bossResult } = executeAction(state, actor.id, action.id);
 
@@ -331,6 +331,24 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
     setSelectedCharacterForSkills(null);
   }, []);
 
+  const handleCrippleBoss = useCallback(async () => {
+    if (!fightState) return;
+    const crippled = cloneState(fightState);
+    for (const c of crippled.characters) {
+      if (c.type === CHARACTER_TYPES.BOSS || c.type === CHARACTER_TYPES.MINION) {
+        c.state.hp = 1;
+      }
+    }
+    setLocalFight(crippled);
+    try {
+      const res = await api.postFightState(crippled, lastFightVersionRef.current);
+      if (res.success) lastFightVersionRef.current = res.fightVersion;
+    } catch (err) {
+      console.error('Failed to post crippled state:', err);
+    }
+    fetchState();
+  }, [fightState, fetchState]);
+
   // Loading state
   if (!fightState) {
     return (
@@ -370,11 +388,16 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
             <Typography variant="h4" sx={{ color: '#fff', fontWeight: 'bold' }}>
               Pub Fight
             </Typography>
-            {posting && (
-              <Typography variant="body2" sx={{ color: '#ffd700' }}>
-                Syncing...
-              </Typography>
-            )}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {posting && (
+                <Typography variant="body2" sx={{ color: '#ffd700' }}>
+                  Syncing...
+                </Typography>
+              )}
+              <Button size="small" onClick={() => setShowAdmin(true)} sx={{ color: '#888', minWidth: 'auto', fontSize: '0.75rem' }}>
+                Admin
+              </Button>
+            </Box>
           </Box>
 
           {/* Fight Over Alert */}
@@ -493,6 +516,16 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
             ownedSkillIds={selectedCharacterForSkills.ownedSkillIds || []}
             perkPoints={selectedCharacterForSkills.perkPoints || 0}
             onUnlockSkill={() => {}}
+          />
+        )}
+
+        {showAdmin && (
+          <AdminModal
+            gameState={gameState}
+            dungeons={dungeons}
+            onClose={() => setShowAdmin(false)}
+            fetchState={fetchState}
+            onCrippleBoss={handleCrippleBoss}
           />
         )}
       </Box>

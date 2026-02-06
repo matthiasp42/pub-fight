@@ -7,6 +7,10 @@
     "dev": "cd server && npm run dev & cd client && npm run dev",
     "dev:server": "cd server && npm run dev",
     "dev:client": "cd client && npm run dev",
-    "build": "cd client && npm install && npm run build && mkdir -p ../server/public && cp -r dist/* ../server/public/ && cd ../server && npm install"
+    "build": "cd client && npm install && npm run build && mkdir -p ../server/public && cp -r dist/* ../server/public/ && cd ../server && npm install",
+    "sim": "node simulator/simulate.js --mixed --runs 200",
+    "sim:quick": "node simulator/simulate.js --mixed --runs 50 --workers 1",
+    "sim:campaign": "node simulator/simulate.js --mixed --progressive --runs 100",
+    "sim:report": "node simulator/simulate.js --mixed --runs 500 --output simulator/balance-report.md"
   }
 }

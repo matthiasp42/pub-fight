@@ -6,7 +6,10 @@
       "Bash(git commit -m \"$\\(cat <<''EOF''\nRedesign skill tree layout from horizontal to vertical with connectors\n\nChange skill tree display from left-to-right columns to top-to-bottom rows\nwith SVG bezier curves showing skill dependencies. Level 1 skills now appear\nat the top, progressing down to level 7 at the bottom.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd 7 unique boss archetypes with distinct mechanics\n\nImplement boss system with level-specific encounters:\n- Molly the Matron \\(Swarm Master\\): spawns minions, heals allies\n- Iron Knuckles McGee \\(Executioner\\): high burst damage, marks targets\n- Blast Barrel Betty \\(Devastator\\): AoE damage specialist\n- Pickled Pete \\(Tank Buster\\): piercing damage, destroys shields\n- The Jukebox Jinx \\(Tempo Manipulator\\): AP drain and manipulation\n- Old Nan the Nightmare \\(Regenerator\\): life drain, constant healing\n- The Last Call \\(Hybrid Nightmare\\): combines all mechanics\n\nAdded spawnMinion and removeShield effect types, drain healing,\nand level-based fight creation functions.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(lsof:*)",
-      "Bash(xargs kill:*)"
+      "Bash(xargs kill:*)",
+      "WebSearch",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:docs.stadiamaps.com)"
     ]
   }
 }
