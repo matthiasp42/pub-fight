@@ -1,7 +1,12 @@
 import { useState, useCallback } from 'react';
 import { api } from '../api/client';
 
-export function AdminModal({ gameState, dungeons, onClose, fetchState, onCrippleBoss, onOpenLog }) {
+const ADMIN_PW = 'dune';
+
+export function AdminModal({ gameState, dungeons, onClose, fetchState, onCrippleBoss, onRestartFight, onOpenLog }) {
+  const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem('adminUnlocked') === '1');
+  const [pwInput, setPwInput] = useState('');
+  const [pwError, setPwError] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [coordsInput, setCoordsInput] = useState('');
@@ -78,6 +83,42 @@ export function AdminModal({ gameState, dungeons, onClose, fetchState, onCripple
     }
   }, [coordsInput, fetchState]);
 
+  const handlePwSubmit = useCallback((e) => {
+    e.preventDefault();
+    if (pwInput === ADMIN_PW) {
+      sessionStorage.setItem('adminUnlocked', '1');
+      setUnlocked(true);
+      setPwError(false);
+    } else {
+      setPwError(true);
+    }
+  }, [pwInput]);
+
+  if (!unlocked) {
+    return (
+      <div style={styles.overlay} onClick={onClose}>
+        <div style={styles.modal} onClick={e => e.stopPropagation()}>
+          <div style={styles.header}>
+            <h2 style={styles.title}>Admin</h2>
+            <button style={styles.closeButton} onClick={onClose}>X</button>
+          </div>
+          <form onSubmit={handlePwSubmit} style={styles.section}>
+            <input
+              type="password"
+              value={pwInput}
+              onChange={e => setPwInput(e.target.value)}
+              placeholder="Password"
+              autoFocus
+              style={styles.pwInput}
+            />
+            {pwError && <p style={styles.error}>Wrong password</p>}
+            <button type="submit" style={styles.applyButton}>Unlock</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.modal} onClick={e => e.stopPropagation()}>
@@ -151,11 +192,18 @@ export function AdminModal({ gameState, dungeons, onClose, fetchState, onCripple
           </div>
         )}
 
-        {/* Cripple Boss (fight mode only) */}
+        {/* Fight actions (fight mode only) */}
         {onCrippleBoss && (
           <div style={styles.section}>
             <button style={styles.crippleButton} onClick={() => { onCrippleBoss(); onClose(); }}>
               Cripple Boss (Set HP to 1)
+            </button>
+          </div>
+        )}
+        {onRestartFight && (
+          <div style={styles.section}>
+            <button style={styles.restartButton} onClick={() => { onRestartFight(); onClose(); }}>
+              Restart Fight
             </button>
           </div>
         )}
@@ -277,6 +325,17 @@ const styles = {
     resize: 'vertical',
     boxSizing: 'border-box',
   },
+  pwInput: {
+    width: '100%',
+    padding: '0.6rem',
+    fontSize: '0.9rem',
+    borderRadius: '8px',
+    border: '1px solid #444',
+    background: 'rgba(0,0,0,0.3)',
+    color: '#ccc',
+    boxSizing: 'border-box',
+    marginBottom: '0.5rem',
+  },
   applyButton: {
     marginTop: '0.5rem',
     width: '100%',
@@ -308,6 +367,17 @@ const styles = {
     color: '#ccc',
     border: '1px solid #444',
     cursor: 'pointer',
+  },
+  restartButton: {
+    width: '100%',
+    padding: '0.75rem',
+    fontSize: '0.9rem',
+    borderRadius: '8px',
+    background: 'rgba(59,130,246,0.15)',
+    color: '#3b82f6',
+    border: '1px solid #3b82f6',
+    cursor: 'pointer',
+    fontWeight: 'bold',
   },
   resetButton: {
     width: '100%',

@@ -8,6 +8,7 @@ export const COMMON_ACTIONS = {
   attack: {
     id: 'attack',
     name: 'Attack',
+    description: 'Strike a random enemy for 1 damage.',
     cost: 1,
     targetType: TARGET_TYPES.RANDOM,
     hits: 1,
@@ -17,6 +18,7 @@ export const COMMON_ACTIONS = {
   shield: {
     id: 'shield',
     name: 'Shield',
+    description: 'Raise your guard, gaining 1 shield point.',
     cost: 1,
     targetType: TARGET_TYPES.SELF,
     hits: 1,
@@ -26,6 +28,7 @@ export const COMMON_ACTIONS = {
   rest: {
     id: 'rest',
     name: 'Rest',
+    description: 'Recover 2 AP and heal 20% HP.',
     cost: 0,
     targetType: TARGET_TYPES.SELF,
     hits: 1,
@@ -40,7 +43,7 @@ export const COMMON_ACTIONS = {
  * @returns {import('./types.js').Action[]}
  */
 export function getDefaultActions(characterType) {
-  return [COMMON_ACTIONS.attack, COMMON_ACTIONS.shield, COMMON_ACTIONS.rest];
+  return [{ ...COMMON_ACTIONS.attack }, { ...COMMON_ACTIONS.shield }, { ...COMMON_ACTIONS.rest }];
 }
 
 /**
@@ -51,7 +54,7 @@ export function getDefaultActions(characterType) {
  * @returns {import('./types.js').Action[]}
  */
 export function getActionsForCharacter(character, serverSkills, ownedSkillIds) {
-  const actions = [COMMON_ACTIONS.attack, COMMON_ACTIONS.shield, COMMON_ACTIONS.rest];
+  const actions = [{ ...COMMON_ACTIONS.attack }, { ...COMMON_ACTIONS.shield }, { ...COMMON_ACTIONS.rest }];
 
   // If no class, just return common actions
   if (!character.class || !serverSkills || !ownedSkillIds) {
@@ -66,6 +69,7 @@ export function getActionsForCharacter(character, serverSkills, ownedSkillIds) {
     .map((skill) => ({
       id: skill.id,
       name: skill.name,
+      description: skill.description,
       cost: skill.ability.cost,
       targetType: skill.ability.targetType,
       hits: skill.ability.hits,

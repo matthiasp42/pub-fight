@@ -15,12 +15,6 @@ const ENEMY_FILLS = [
   ['#9f1239', '#e11d48'], // rose
   ['#7c2d12', '#d97706'], // amber
 ];
-const PARTY_FILLS = [
-  ['#065f46', '#10b981'],
-  ['#0f766e', '#14b8a6'],
-  ['#166534', '#22c55e'],
-  ['#115e59', '#2dd4bf'],
-];
 const MISS_FILL = ['#1f1f1f', '#333'];
 
 const ARROW_COLORS = ['#ffd700', '#ff6b6b', '#60a5fa', '#34d399'];
@@ -58,26 +52,9 @@ function buildVisualSectors(engineSectors, attacker, allCharacters) {
   );
   const totalMissAngle = missSector ? missSector.end - missSector.start : 0;
 
-  const isPlayerAttacker = attacker.type === CHARACTER_TYPES.PLAYER;
-  const friendlies = allCharacters.filter(
-    (c) =>
-      c.id !== attacker.id &&
-      c.state.isAlive &&
-      (isPlayerAttacker
-        ? c.type === CHARACTER_TYPES.PLAYER
-        : c.type === CHARACTER_TYPES.BOSS || c.type === CHARACTER_TYPES.MINION)
-  );
-
-  const friendlyAngleEach =
-    friendlies.length > 0
-      ? Math.min((totalMissAngle * 0.6) / friendlies.length, 40)
-      : 0;
-  const totalFriendlyAngle = friendlyAngleEach * friendlies.length;
-  const remainingMissAngle = totalMissAngle - totalFriendlyAngle;
-  const halfMiss = remainingMissAngle / 2;
-
   const visualSectors = [];
   let angle = -(totalTargetAngle / 2);
+  const halfMiss = totalMissAngle / 2;
 
   targetSectors.forEach((sector, i) => {
     const sectorAngle = sector.end - sector.start;
@@ -105,19 +82,6 @@ function buildVisualSectors(engineSectors, attacker, allCharacters) {
     });
     angle += halfMiss;
   }
-
-  friendlies.forEach((friendly, i) => {
-    const fills = PARTY_FILLS[i % PARTY_FILLS.length];
-    visualSectors.push({
-      type: 'friendly',
-      fills,
-      fullName: friendly.name,
-      startAngle: angle,
-      endAngle: angle + friendlyAngleEach,
-      character: friendly,
-    });
-    angle += friendlyAngleEach;
-  });
 
   if (halfMiss > 0) {
     visualSectors.push({
@@ -210,7 +174,7 @@ export function BattleWheel({ wheelResults, attacker, allCharacters, onComplete 
     wheelResults.map((_, i) => {
       const startAngle = Math.random() * 360;
       const targetAngle = targetAngles[i];
-      const fullRotations = 3 + Math.random() * 2;
+      const fullRotations = 3 + Math.floor(Math.random() * 3);
       const finalAngle =
         startAngle +
         fullRotations * 360 +
@@ -255,8 +219,10 @@ export function BattleWheel({ wheelResults, attacker, allCharacters, onComplete 
     .filter((s) => s.type !== 'miss')
     .map((sector, i) => {
       const Icon = getCharacterIcon(sector.character);
-      const pos = iconPosition(CX, CY, ICON_RADIUS, sector.startAngle, sector.endAngle);
-      const iconSize = 22;
+      const sectorAngle = sector.endAngle - sector.startAngle;
+      const iconSize = sectorAngle < 25 ? 14 : sectorAngle < 45 ? 18 : 22;
+      const r = sectorAngle < 25 ? ICON_RADIUS * 0.7 : ICON_RADIUS;
+      const pos = iconPosition(CX, CY, r, sector.startAngle, sector.endAngle);
       return { Icon, pos, iconSize, sector, key: i };
     });
 
@@ -316,6 +282,9 @@ export function BattleWheel({ wheelResults, attacker, allCharacters, onComplete 
                     <feMergeNode in="SourceGraphic" />
                   </feMerge>
                 </filter>
+                <clipPath id="wheel-clip">
+                  <circle cx={CX} cy={CY} r={RADIUS - 2} />
+                </clipPath>
               </defs>
 
               {/* Sector wedges with gradients */}
@@ -345,49 +314,54 @@ export function BattleWheel({ wheelResults, attacker, allCharacters, onComplete 
                 );
               })}
 
-              {/* Character icons via foreignObject */}
-              {sectorIcons.map(({ Icon, pos, iconSize, sector, key }) => (
-                <foreignObject
-                  key={`icon-${key}`}
-                  x={pos.x - iconSize / 2}
-                  y={pos.y - iconSize / 2}
-                  width={iconSize}
-                  height={iconSize}
-                  style={{ pointerEvents: 'none', overflow: 'visible' }}
-                >
-                  <div style={{
-                    width: iconSize,
-                    height: iconSize,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.6))',
-                  }}>
-                    <Icon size={iconSize} color="#fff" />
-                  </div>
-                </foreignObject>
-              ))}
+              {/* Clipped group for icons — keeps them inside the wheel */}
+              <g clipPath="url(#wheel-clip)">
+                {/* Character icons via foreignObject */}
+                {sectorIcons.map(({ Icon, pos, iconSize, sector, key }) => (
+                  <foreignObject
+                    key={`icon-${key}`}
+                    x={pos.x - iconSize / 2}
+                    y={pos.y - iconSize / 2}
+                    width={iconSize}
+                    height={iconSize}
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    <div style={{
+                      width: iconSize,
+                      height: iconSize,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.6))',
+                    }}>
+                      <Icon size={iconSize} color="#fff" />
+                    </div>
+                  </foreignObject>
+                ))}
 
-              {/* "X" for miss sectors */}
-              {visualSectors
-                .filter((s) => s.type === 'miss')
-                .map((sector, i) => {
-                  const pos = iconPosition(CX, CY, ICON_RADIUS, sector.startAngle, sector.endAngle);
-                  return (
-                    <text
-                      key={`miss-${i}`}
-                      x={pos.x}
-                      y={pos.y}
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      fill="rgba(255,255,255,0.25)"
-                      fontSize={16}
-                      fontWeight="bold"
-                    >
-                      X
-                    </text>
-                  );
-                })}
+                {/* "X" for miss sectors */}
+                {visualSectors
+                  .filter((s) => s.type === 'miss')
+                  .map((sector, i) => {
+                    const sectorAngle = sector.endAngle - sector.startAngle;
+                    const r = sectorAngle < 25 ? ICON_RADIUS * 0.7 : ICON_RADIUS;
+                    const pos = iconPosition(CX, CY, r, sector.startAngle, sector.endAngle);
+                    return (
+                      <text
+                        key={`miss-${i}`}
+                        x={pos.x}
+                        y={pos.y}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        fill="rgba(255,255,255,0.25)"
+                        fontSize={sectorAngle < 25 ? 11 : 16}
+                        fontWeight="bold"
+                      >
+                        X
+                      </text>
+                    );
+                  })}
+              </g>
 
               {/* Arrows */}
               {arrowStates.map((_, i) => {

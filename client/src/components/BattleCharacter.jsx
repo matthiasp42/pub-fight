@@ -36,12 +36,12 @@ export function BattleCharacter({
   onClick,
   size = 'normal',
   isBeingHit = false,
+  isTargetable = false,
 }) {
   const { name, type, attributes, state } = character;
   const characterClass = character.class;
   const isDead = !state.isAlive;
   const healthPercent = (state.health / attributes.maxHealth) * 100;
-  const apPercent = (state.ap / attributes.maxAP) * 100;
 
   const config = isEnemy
     ? ENEMY_CONFIG[type] || ENEMY_CONFIG[CHARACTER_TYPES.MINION]
@@ -79,14 +79,18 @@ export function BattleCharacter({
       {/* Inner div for breathing/idle animation */}
       <motion.div
         animate={
-          isCurrentTurn && !isDead
-            ? { scale: [1, 1.05, 1], y: [0, -4, 0] }
-            : { scale: 1, y: 0 }
+          isTargetable
+            ? { scale: [1, 1.08, 1], y: [0, -3, 0] }
+            : isCurrentTurn && !isDead
+              ? { scale: [1, 1.05, 1], y: [0, -4, 0] }
+              : { scale: 1, y: 0 }
         }
         transition={
-          isCurrentTurn && !isDead
-            ? { duration: 1.5, repeat: Infinity, ease: 'easeInOut' }
-            : { duration: 0.3 }
+          isTargetable
+            ? { duration: 0.8, repeat: Infinity, ease: 'easeInOut' }
+            : isCurrentTurn && !isDead
+              ? { duration: 1.5, repeat: Infinity, ease: 'easeInOut' }
+              : { duration: 0.3 }
         }
         style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}
       >
@@ -134,23 +138,29 @@ export function BattleCharacter({
                 }),
             border: isDead
               ? '2px solid #444'
-              : isCurrentTurn
+              : isTargetable
                 ? '3px solid'
-                : '2px solid',
+                : isCurrentTurn
+                  ? '3px solid'
+                  : '2px solid',
             borderColor: isDead
               ? '#444'
-              : isCurrentTurn
-                ? 'primary.main'
-                : isEnemy
-                  ? 'rgba(220, 38, 38, 0.6)'
-                  : 'rgba(16, 185, 129, 0.4)',
+              : isTargetable
+                ? '#f59e0b'
+                : isCurrentTurn
+                  ? 'primary.main'
+                  : isEnemy
+                    ? 'rgba(220, 38, 38, 0.6)'
+                    : 'rgba(16, 185, 129, 0.4)',
             boxShadow: isDead
               ? 'none'
-              : isCurrentTurn
-                ? '0 0 20px rgba(245, 158, 11, 0.6), 0 0 40px rgba(245, 158, 11, 0.3), inset 0 0 15px rgba(245, 158, 11, 0.15)'
-                : isEnemy
-                  ? '0 0 10px rgba(220, 38, 38, 0.2)'
-                  : '0 0 10px rgba(16, 185, 129, 0.15)',
+              : isTargetable
+                ? '0 0 16px rgba(245, 158, 11, 0.6), 0 0 32px rgba(245, 158, 11, 0.3)'
+                : isCurrentTurn
+                  ? '0 0 20px rgba(245, 158, 11, 0.6), 0 0 40px rgba(245, 158, 11, 0.3), inset 0 0 15px rgba(245, 158, 11, 0.15)'
+                  : isEnemy
+                    ? '0 0 10px rgba(220, 38, 38, 0.2)'
+                    : '0 0 10px rgba(16, 185, 129, 0.15)',
             opacity: isDead ? 0.4 : 1,
             filter: isDead ? 'grayscale(0.8)' : 'none',
             transition: 'all 0.3s ease',
@@ -183,27 +193,39 @@ export function BattleCharacter({
             />
           )}
 
-          {/* Shield badge */}
-          {state.shield > 0 && !isDead && (
+          {/* Shield diamonds — filled for active, outlined for empty */}
+          {attributes.shieldCapacity > 0 && !isDead && (
             <Box
               sx={{
                 position: 'absolute',
-                top: -4,
-                right: -4,
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                backgroundColor: 'rgba(147, 51, 234, 0.9)',
+                top: -5,
+                left: '50%',
+                transform: 'translateX(-50%)',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: '1.5px solid rgba(192, 132, 252, 0.8)',
-                boxShadow: '0 0 6px rgba(147, 51, 234, 0.5)',
+                gap: '2px',
+                zIndex: 3,
               }}
             >
-              <Typography sx={{ fontSize: '0.55rem', fontWeight: 800, color: '#fff' }}>
-                {state.shield}
-              </Typography>
+              {Array.from({ length: attributes.shieldCapacity }, (_, i) => {
+                const active = i < state.shield;
+                return (
+                  <Box
+                    key={i}
+                    sx={{
+                      width: 8,
+                      height: 8,
+                      transform: 'rotate(45deg)',
+                      border: '1.5px solid',
+                      borderColor: active ? '#60a5fa' : 'rgba(59, 130, 246, 0.5)',
+                      backgroundColor: active ? '#3b82f6' : 'rgba(10, 15, 30, 0.7)',
+                      boxShadow: active
+                        ? '0 0 5px rgba(59, 130, 246, 0.8), inset 0 0 2px rgba(255,255,255,0.2)'
+                        : 'inset 0 0 2px rgba(0,0,0,0.4)',
+                      transition: 'all 0.3s ease',
+                    }}
+                  />
+                );
+              })}
             </Box>
           )}
 
@@ -286,40 +308,26 @@ export function BattleCharacter({
           </Typography>
         </Box>
 
-        {/* AP Bar */}
-        <Box sx={{ width: barWidth }}>
-          <Box
-            sx={{
-              width: '100%',
-              height: 3,
-              borderRadius: 3,
-              backgroundColor: 'rgba(0,0,0,0.6)',
-              overflow: 'hidden',
-              border: '1px solid rgba(255,255,255,0.05)',
-            }}
-          >
-            <Box
-              sx={{
-                width: `${apPercent}%`,
-                height: '100%',
-                borderRadius: 3,
-                background: 'linear-gradient(90deg, #2563eb, #3b82f6)',
-                transition: 'width 0.4s ease',
-                boxShadow: '0 0 3px rgba(59, 130, 246, 0.3)',
-              }}
-            />
+        {/* AP pips — hidden for enemies (they refill each turn) */}
+        {!isEnemy && (
+          <Box sx={{ display: 'flex', gap: '3px', justifyContent: 'center', mt: 0.25 }}>
+            {Array.from({ length: attributes.maxAP }, (_, i) => (
+              <Box
+                key={i}
+                sx={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: 1,
+                  border: '1px solid',
+                  borderColor: i < state.ap ? 'rgba(220, 38, 38, 0.8)' : 'rgba(220, 38, 38, 0.25)',
+                  backgroundColor: i < state.ap ? 'rgba(220, 38, 38, 0.9)' : 'transparent',
+                  boxShadow: i < state.ap ? '0 0 3px rgba(220, 38, 38, 0.4)' : 'none',
+                  transition: 'all 0.3s ease',
+                }}
+              />
+            ))}
           </Box>
-          <Typography
-            sx={{
-              fontSize: '0.45rem',
-              color: 'rgba(168, 160, 149, 0.7)',
-              textAlign: 'center',
-              mt: 0.125,
-            }}
-          >
-            {state.ap}/{attributes.maxAP} AP
-          </Typography>
-        </Box>
+        )}
 
         {/* Ground shadow / pedestal */}
         {!isDead && (

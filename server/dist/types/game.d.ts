@@ -100,6 +100,12 @@ export interface DungeonDefinition {
     lng: number;
     radiusMeters: number;
 }
+export interface LevelupSnapshot {
+    attributes: CharacterAttributes;
+    ownedSkillIds: string[];
+    attributePoints: number;
+    perkPoints: number;
+}
 export interface GameState {
     version: number;
     phase: GamePhase;
@@ -108,4 +114,12 @@ export interface GameState {
     fightState: any | null;
     fightVersion: number;
     players: Record<string, PlayerCharacter>;
+    levelupSnapshots?: Record<string, LevelupSnapshot>;
+}
+export interface GameInstance {
+    gameCode: string;
+    gameState: GameState;
+    dungeons: DungeonDefinition[];
+    createdAt: number;
+    lastActivity: number;
 }

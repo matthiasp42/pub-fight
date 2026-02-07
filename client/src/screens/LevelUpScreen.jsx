@@ -77,6 +77,47 @@ export function LevelUpScreen({ gameState, myPlayer, fetchState }) {
     }
   }, [myPlayer?.id, fetchState]);
 
+  const handleRandom = useCallback(async () => {
+    const attrs = Object.keys(ATTR_LABELS);
+    const points = attrPointsAvailable;
+    if (points <= 0) return;
+    const randomDeltas = {};
+    for (let i = 0; i < points; i++) {
+      const attr = attrs[Math.floor(Math.random() * attrs.length)];
+      randomDeltas[attr] = (randomDeltas[attr] || 0) + 1;
+    }
+    setSubmitting(true);
+    setError('');
+    try {
+      const result = await api.distributeAttributes(myPlayer.id, randomDeltas);
+      if (result.success) {
+        setDeltas({});
+        fetchState();
+      } else {
+        setError(result.error || 'Failed to distribute');
+      }
+    } catch (err) {
+      setError('Connection failed');
+    } finally {
+      setSubmitting(false);
+    }
+  }, [attrPointsAvailable, myPlayer?.id, fetchState]);
+
+  const handleUndo = useCallback(async () => {
+    setError('');
+    try {
+      const result = await api.undoLevelup(myPlayer.id);
+      if (result.success) {
+        setDeltas({});
+        fetchState();
+      } else {
+        setError(result.error || 'Failed to undo');
+      }
+    } catch (err) {
+      setError('Connection failed');
+    }
+  }, [myPlayer?.id, fetchState]);
+
   const handleFinishLevelup = useCallback(async () => {
     setError('');
     try {
@@ -100,6 +141,26 @@ export function LevelUpScreen({ gameState, myPlayer, fetchState }) {
       <p style={styles.subtitle}>
         Level {myPlayer?.level || '?'} - {clearedCount}/7 dungeons cleared
       </p>
+
+      <div style={styles.topActions}>
+        {attrPointsAvailable > 0 && (
+          <button
+            style={styles.randomButton}
+            onClick={handleRandom}
+            disabled={submitting}
+          >
+            Random
+          </button>
+        )}
+        {!allPlayersReady && (
+          <button
+            style={styles.undoButton}
+            onClick={handleUndo}
+          >
+            Undo
+          </button>
+        )}
+      </div>
 
       {error && <p style={styles.error}>{error}</p>}
 
@@ -241,7 +302,30 @@ const styles = {
   },
   subtitle: {
     color: '#888',
-    marginBottom: '1.5rem',
+    marginBottom: '0.75rem',
+  },
+  topActions: {
+    display: 'flex',
+    gap: '0.5rem',
+    marginBottom: '1rem',
+  },
+  randomButton: {
+    padding: '0.4rem 1rem',
+    fontSize: '0.8rem',
+    borderRadius: '8px',
+    background: 'rgba(255,255,255,0.1)',
+    color: '#aaa',
+    border: '1px solid #444',
+    cursor: 'pointer',
+  },
+  undoButton: {
+    padding: '0.4rem 1rem',
+    fontSize: '0.8rem',
+    borderRadius: '8px',
+    background: 'rgba(255,100,100,0.1)',
+    color: '#ff8888',
+    border: '1px solid #664444',
+    cursor: 'pointer',
   },
   error: {
     color: '#ff6b6b',

@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import { Box, Typography, TextField, Button } from '@mui/material';
+import { motion } from 'framer-motion';
+import { GiBeerStein } from 'react-icons/gi';
 import { api } from '../api/client';
 
 export function LoginScreen({ onLogin }) {
@@ -27,69 +30,73 @@ export function LoginScreen({ onLogin }) {
   };
 
   return (
-    <div style={styles.container}>
-      <h1 style={styles.title}>Pub Fight</h1>
-      <form onSubmit={handleSubmit} style={styles.form}>
-        <input
+    <Box
+      component={motion.div}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        px: 2.5,
+      }}
+    >
+      <GiBeerStein size={48} color="#f59e0b" style={{ marginBottom: 8 }} />
+      <Typography
+        variant="h3"
+        sx={{
+          fontWeight: 'bold',
+          mb: 3,
+          textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
+        }}
+      >
+        Pub Fight
+      </Typography>
+
+      <Box
+        component="form"
+        onSubmit={handleSubmit}
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 1.5,
+          width: '100%',
+          maxWidth: 300,
+        }}
+      >
+        <TextField
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Enter password"
-          style={styles.input}
           autoFocus
           disabled={loading}
+          fullWidth
+          slotProps={{
+            input: {
+              sx: { textAlign: 'center', fontSize: '1.2rem' },
+            },
+          }}
         />
-        <button type="submit" style={styles.button} disabled={loading}>
+        <Button
+          type="submit"
+          variant="contained"
+          color="primary"
+          size="large"
+          disabled={loading}
+          sx={{ fontSize: '1.2rem', fontWeight: 'bold', py: 1.25 }}
+        >
           {loading ? 'Joining...' : 'Enter'}
-        </button>
-        {error && <p style={styles.error}>{error}</p>}
-      </form>
-    </div>
+        </Button>
+        {error && (
+          <Typography color="secondary.main" sx={{ textAlign: 'center', mt: 0.5 }}>
+            {error}
+          </Typography>
+        )}
+      </Box>
+    </Box>
   );
 }
-
-const styles = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: '100vh',
-    padding: '20px'
-  },
-  title: {
-    fontSize: '3rem',
-    marginBottom: '2rem',
-    textShadow: '2px 2px 4px rgba(0,0,0,0.5)'
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1rem',
-    width: '100%',
-    maxWidth: '300px'
-  },
-  input: {
-    padding: '1rem',
-    fontSize: '1.2rem',
-    borderRadius: '12px',
-    border: '2px solid #4a4a6a',
-    background: 'rgba(255,255,255,0.1)',
-    color: '#fff',
-    textAlign: 'center'
-  },
-  button: {
-    padding: '1rem',
-    fontSize: '1.2rem',
-    borderRadius: '12px',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    color: '#fff',
-    fontWeight: 'bold',
-    transition: 'transform 0.1s'
-  },
-  error: {
-    color: '#ff6b6b',
-    textAlign: 'center',
-    marginTop: '0.5rem'
-  }
-};

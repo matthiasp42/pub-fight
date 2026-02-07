@@ -12,6 +12,10 @@
     "sim:quick": "node simulator/simulate.js --mixed --runs 50 --workers 1",
     "sim:campaign": "node simulator/simulate.js --mixed --progressive --runs 100",
     "sim:report": "node simulator/simulate.js --mixed --runs 500 --output simulator/balance-report.md",
-    "sim:tune": "node simulator/autoTune.js --runs 500 --validate"
+    "sim:tune": "node simulator/autoTune.js --runs 500 --validate",
+    "test:e2e": "npx playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
   }
 }

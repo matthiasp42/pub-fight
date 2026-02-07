@@ -1,5 +1,5 @@
 import { CHARACTER_TYPES } from './types.js';
-import { getDefaultActions } from './actions.js';
+import { getActionsForCharacter } from './actions.js';
 import { getBossById } from './bosses.js';
 
 /**
@@ -131,6 +131,7 @@ export function buildFightFromServer(serverPlayers, dungeonId, dungeons, serverS
 
   const bossDefinition = getBossById(dungeon.bossId);
   if (!bossDefinition) throw new Error(`Boss ${dungeon.bossId} not found`);
+  if (!serverSkills) throw new Error('Server skills not loaded');
 
   // Build player characters from server data
   const players = Object.values(serverPlayers).map(sp => {
@@ -149,7 +150,7 @@ export function buildFightFromServer(serverPlayers, dungeonId, dungeons, serverS
         shield: 0,
         isAlive: true,
       },
-      actions: getDefaultActions(CHARACTER_TYPES.PLAYER),
+      actions: getActionsForCharacter({ class: sp.class }, serverSkills, sp.ownedSkillIds || []),
       passives: [],
     };
 
@@ -191,6 +192,11 @@ export function buildFightFromServer(serverPlayers, dungeonId, dungeons, serverS
     actions: bossActions,
     passives: [],
   };
+
+  // Scale boss HP by player count (balanced around 4 players)
+  const hpScale = Math.max(0.5, players.length / 4);
+  boss.attributes.maxHealth = Math.round(boss.attributes.maxHealth * hpScale);
+  boss.state.health = boss.attributes.maxHealth;
 
   const characters = [...players, boss];
 

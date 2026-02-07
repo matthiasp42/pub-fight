@@ -1,14 +1,32 @@
 import { useState, useEffect } from 'react';
+import { Box, Typography, TextField, Button } from '@mui/material';
+import { motion, AnimatePresence } from 'framer-motion';
+import { GiShield, GiSwordWound, GiWizardStaff, GiCauldron } from 'react-icons/gi';
+import { LuPlus, LuChevronLeft } from 'react-icons/lu';
 import { api } from '../api/client';
 
 const CLASS_OPTIONS = [
-  { id: 'tank', name: 'Tank', icon: '\u{1F6E1}', desc: 'High HP, shields, protects allies' },
-  { id: 'warrior', name: 'Warrior', icon: '\u{2694}', desc: 'High damage, multi-hit attacks' },
-  { id: 'wizard', name: 'Wizard', icon: '\u{1F9D9}', desc: 'Powerful AoE magic, high dexterity' },
-  { id: 'alchemist', name: 'Alchemist', icon: '\u{1F9EA}', desc: 'Healing, buffs, support' },
+  { id: 'tank', name: 'Tank', Icon: GiShield, desc: 'High HP, shields, protects allies' },
+  { id: 'warrior', name: 'Warrior', Icon: GiSwordWound, desc: 'High damage, multi-hit attacks' },
+  { id: 'wizard', name: 'Wizard', Icon: GiWizardStaff, desc: 'Powerful AoE magic, high dexterity' },
+  { id: 'alchemist', name: 'Alchemist', Icon: GiCauldron, desc: 'Healing, buffs, support' },
 ];
 
-export function LobbyScreen({ gameState, myPlayerId, onSelectPlayer, onReleasePlayer, onLogout, fetchState }) {
+const CLASS_ICON_MAP = {
+  tank: GiShield,
+  warrior: GiSwordWound,
+  wizard: GiWizardStaff,
+  alchemist: GiCauldron,
+};
+
+const PORTRAITS = {
+  ehsan: '/portraits/ehsan.png',
+  dennis: '/portraits/dennis.png',
+  budde: '/portraits/budde.png',
+  matthias: '/portraits/matthias.png',
+};
+
+export function LobbyScreen({ gameState, myPlayerId, onSelectPlayer, onReleasePlayer, onLeaveGame, fetchState }) {
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [selectedClass, setSelectedClass] = useState('warrior');
@@ -18,6 +36,15 @@ export function LobbyScreen({ gameState, myPlayerId, onSelectPlayer, onReleasePl
   const sessionId = localStorage.getItem('sessionId');
   const players = gameState?.players ? Object.values(gameState.players) : [];
   const phase = gameState?.phase || 'lobby';
+  const takenClasses = new Set(players.map((p) => p.class));
+
+  // Auto-select first available class when taken classes change
+  useEffect(() => {
+    if (takenClasses.has(selectedClass)) {
+      const available = CLASS_OPTIONS.find((c) => !takenClasses.has(c.id));
+      if (available) setSelectedClass(available.id);
+    }
+  }, [players.length]);
 
   // Poll for updates
   useEffect(() => {
@@ -86,313 +113,279 @@ export function LobbyScreen({ gameState, myPlayerId, onSelectPlayer, onReleasePl
   };
 
   return (
-    <div style={styles.container}>
-      <h1 style={styles.title}>Pub Fight</h1>
-      <p style={styles.subtitle}>
+    <Box
+      component={motion.div}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        minHeight: '100vh',
+        px: 2.5,
+        pt: 2.5,
+        pb: myPlayerId && phase === 'lobby' ? '120px' : 2.5,
+      }}
+    >
+      <Button
+        variant="text"
+        startIcon={<LuChevronLeft />}
+        onClick={() => showCreate ? setShowCreate(false) : onLeaveGame()}
+        sx={{
+          color: 'text.secondary',
+          fontSize: '0.85rem',
+          alignSelf: 'flex-start',
+          mb: 1,
+          minHeight: 36,
+        }}
+      >
+        Back
+      </Button>
+
+      <Typography variant="h4" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+        Pub Fight
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
         {phase === 'lobby' ? 'Pick your fighter' : 'Game in progress - select your character'}
-      </p>
+      </Typography>
 
-      {error && <p style={styles.error}>{error}</p>}
+      {gameState?.gameCode && (
+        <Typography
+          variant="body2"
+          sx={{
+            mb: 2,
+            fontFamily: 'monospace',
+            fontWeight: 'bold',
+            letterSpacing: '0.15em',
+            color: 'primary.main',
+            bgcolor: 'rgba(245,158,11,0.1)',
+            px: 1.5,
+            py: 0.5,
+            borderRadius: 1,
+          }}
+        >
+          Game Code: {gameState.gameCode}
+        </Typography>
+      )}
 
-      <div style={styles.playerList}>
+      {error && (
+        <Typography color="secondary.main" sx={{ mb: 1.5 }}>
+          {error}
+        </Typography>
+      )}
+
+      {/* Player list */}
+      <Box sx={{ width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 1, mb: 2 }}>
         {players.length === 0 && (
-          <p style={styles.empty}>No players yet. Create one!</p>
+          <Typography color="text.secondary" sx={{ fontStyle: 'italic', textAlign: 'center' }}>
+            No players yet. Create one!
+          </Typography>
         )}
-        {players.map(player => {
+        {players.map((player) => {
           const isControlled = !!player.controlledBy;
           const isMine = player.controlledBy === sessionId;
-          const classIcon = CLASS_OPTIONS.find(c => c.id === player.class)?.icon || '';
+          const ClassIcon = CLASS_ICON_MAP[player.class];
+          const portrait = PORTRAITS[player.name.toLowerCase()];
 
           return (
-            <div
+            <Box
               key={player.id}
-              style={{
-                ...styles.playerCard,
-                ...(isMine ? styles.myCard : {}),
-                ...(isControlled && !isMine ? styles.takenCard : {})
-              }}
+              component={motion.div}
+              whileTap={!isMine ? { scale: 0.97 } : undefined}
               onClick={() => !isMine && handleTakeControl(player.id)}
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1.5,
+                px: 2,
+                py: 1.5,
+                borderRadius: 1,
+                bgcolor: isMine ? 'primary.main' : 'rgba(255,255,255,0.08)',
+                color: isMine ? 'background.default' : 'text.primary',
+                opacity: isControlled && !isMine ? 0.5 : 1,
+                cursor: isMine ? 'default' : 'pointer',
+                transition: 'background 0.2s',
+              }}
             >
-              <div style={styles.playerInfo}>
-                <span style={styles.playerName}>
-                  {classIcon} {player.name}
-                </span>
-                <span style={styles.playerClass}>
+              {/* Avatar */}
+              <Box
+                sx={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: '50%',
+                  flexShrink: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  ...(portrait
+                    ? {
+                        backgroundImage: `url(${portrait})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                      }
+                    : {
+                        bgcolor: isMine ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.08)',
+                      }),
+                  border: 2,
+                  borderColor: isMine ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.15)',
+                }}
+              >
+                {!portrait && ClassIcon && <ClassIcon size={22} />}
+              </Box>
+
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25, flex: 1, minWidth: 0 }}>
+                <Typography sx={{ fontWeight: 'bold', fontSize: '1.1rem' }}>
+                  {player.name}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{ opacity: 0.7, textTransform: 'capitalize' }}
+                >
                   {player.class} Lv.{player.level}
-                </span>
-              </div>
-              <span style={styles.playerStatus}>
+                </Typography>
+              </Box>
+              <Typography variant="body2" sx={{ opacity: 0.7, flexShrink: 0 }}>
                 {isMine ? '(You)' : isControlled ? '(Taken)' : '(Available)'}
-              </span>
-            </div>
+              </Typography>
+            </Box>
           );
         })}
-      </div>
+      </Box>
 
+      {/* New player button */}
       {phase === 'lobby' && !showCreate && (
-        <button
-          style={styles.addButton}
+        <Button
+          variant="outlined"
+          color="primary"
+          startIcon={<LuPlus />}
           onClick={() => setShowCreate(true)}
+          sx={{ mb: 3 }}
         >
-          + New Player
-        </button>
+          New Player
+        </Button>
       )}
 
-      {showCreate && (
-        <form onSubmit={handleCreate} style={styles.createForm}>
-          <input
-            type="text"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="Enter your name"
-            style={styles.input}
-            autoFocus
-            maxLength={20}
-          />
-
-          <div style={styles.classGrid}>
-            {CLASS_OPTIONS.map(cls => (
-              <div
-                key={cls.id}
-                style={{
-                  ...styles.classCard,
-                  ...(selectedClass === cls.id ? styles.classCardSelected : {})
-                }}
-                onClick={() => setSelectedClass(cls.id)}
-              >
-                <span style={styles.classIcon}>{cls.icon}</span>
-                <span style={styles.className}>{cls.name}</span>
-                <span style={styles.classDesc}>{cls.desc}</span>
-              </div>
-            ))}
-          </div>
-
-          <div style={styles.createButtons}>
-            <button type="submit" style={styles.button} disabled={loading}>
-              {loading ? 'Creating...' : 'Create'}
-            </button>
-            <button
-              type="button"
-              style={styles.cancelButton}
-              onClick={() => setShowCreate(false)}
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      )}
-
-      {myPlayerId && phase === 'lobby' && (
-        <div style={styles.bottomButtons}>
-          <button style={styles.releaseButton} onClick={handleRelease}>
-            Release
-          </button>
-          <button
-            style={{
-              ...styles.enterButton,
-              ...(players.length < 1 ? styles.disabledButton : {})
+      {/* Create player form */}
+      <AnimatePresence>
+        {showCreate && (
+          <Box
+            component={motion.form}
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            onSubmit={handleCreate}
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 1.5,
+              width: '100%',
+              maxWidth: 400,
+              mb: 3,
+              overflow: 'hidden',
             }}
+          >
+            <TextField
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Enter your name"
+              autoFocus
+              fullWidth
+              slotProps={{
+                htmlInput: { maxLength: 20 },
+                input: { sx: { textAlign: 'center', fontSize: '1.1rem' } },
+              }}
+            />
+
+            {/* Class grid */}
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+              {CLASS_OPTIONS.map((cls) => {
+                const selected = selectedClass === cls.id;
+                const taken = takenClasses.has(cls.id);
+                return (
+                  <Box
+                    key={cls.id}
+                    onClick={() => !taken && setSelectedClass(cls.id)}
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      p: 1,
+                      borderRadius: 1,
+                      border: 2,
+                      borderColor: selected && !taken ? 'primary.main' : 'transparent',
+                      bgcolor: selected && !taken
+                        ? 'rgba(245,158,11,0.1)'
+                        : 'rgba(255,255,255,0.05)',
+                      cursor: taken ? 'not-allowed' : 'pointer',
+                      opacity: taken ? 0.4 : 1,
+                      gap: 0.25,
+                      transition: 'border-color 0.2s, background 0.2s',
+                    }}
+                  >
+                    <cls.Icon size={24} color={selected && !taken ? '#f59e0b' : '#f5f0e8'} />
+                    <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                      {cls.name}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      sx={{ opacity: 0.6, textAlign: 'center', lineHeight: 1.2 }}
+                    >
+                      {taken ? 'Taken' : cls.desc}
+                    </Typography>
+                  </Box>
+                );
+              })}
+            </Box>
+
+            <Button
+              type="submit"
+              variant="contained"
+              color="primary"
+              fullWidth
+              disabled={loading}
+              sx={{ fontWeight: 'bold' }}
+            >
+              {loading ? 'Creating...' : 'Create'}
+            </Button>
+          </Box>
+        )}
+      </AnimatePresence>
+
+      {/* Bottom bar: release + start */}
+      {myPlayerId && phase === 'lobby' && (
+        <Box
+          sx={{
+            position: 'fixed',
+            bottom: 20,
+            left: 20,
+            right: 20,
+            display: 'flex',
+            gap: 1.5,
+            maxWidth: 400,
+            mx: 'auto',
+          }}
+        >
+          <Button
+            variant="outlined"
+            color="secondary"
+            onClick={handleRelease}
+            sx={{ flex: 1 }}
+          >
+            Release
+          </Button>
+          <Button
+            variant="contained"
+            color="success"
             onClick={handleStartGame}
             disabled={players.length < 1}
+            sx={{ flex: 2, fontWeight: 'bold', fontSize: '1.1rem' }}
           >
             Start Game ({players.length} player{players.length !== 1 ? 's' : ''})
-          </button>
-        </div>
+          </Button>
+        </Box>
       )}
 
-      <button style={styles.logoutButton} onClick={onLogout}>
-        Logout
-      </button>
-    </div>
+    </Box>
   );
 }
-
-const styles = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    minHeight: '100vh',
-    padding: '20px',
-  },
-  title: {
-    fontSize: '2rem',
-    marginBottom: '0.5rem',
-  },
-  subtitle: {
-    color: '#888',
-    marginBottom: '1.5rem',
-    fontSize: '0.9rem',
-  },
-  error: {
-    color: '#ff6b6b',
-    marginBottom: '1rem',
-  },
-  empty: {
-    color: '#888',
-    fontStyle: 'italic',
-  },
-  playerList: {
-    width: '100%',
-    maxWidth: '400px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.75rem',
-    marginBottom: '1.5rem',
-  },
-  playerCard: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '1rem 1.5rem',
-    borderRadius: '12px',
-    background: 'rgba(255,255,255,0.1)',
-    cursor: 'pointer',
-    transition: 'transform 0.1s, background 0.2s',
-  },
-  myCard: {
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    cursor: 'default',
-  },
-  takenCard: {
-    opacity: 0.5,
-    cursor: 'pointer',
-  },
-  playerInfo: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.25rem',
-  },
-  playerName: {
-    fontSize: '1.2rem',
-    fontWeight: 'bold',
-  },
-  playerClass: {
-    fontSize: '0.8rem',
-    opacity: 0.7,
-    textTransform: 'capitalize',
-  },
-  playerStatus: {
-    fontSize: '0.9rem',
-    opacity: 0.7,
-  },
-  addButton: {
-    padding: '0.75rem 1.5rem',
-    fontSize: '1rem',
-    borderRadius: '12px',
-    background: 'rgba(255,255,255,0.1)',
-    color: '#fff',
-    marginBottom: '2rem',
-  },
-  createForm: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1rem',
-    width: '100%',
-    maxWidth: '400px',
-    marginBottom: '2rem',
-  },
-  input: {
-    padding: '1rem',
-    fontSize: '1.1rem',
-    borderRadius: '12px',
-    border: '2px solid #4a4a6a',
-    background: 'rgba(255,255,255,0.1)',
-    color: '#fff',
-    textAlign: 'center',
-  },
-  classGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '0.75rem',
-  },
-  classCard: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    padding: '0.75rem',
-    borderRadius: '12px',
-    border: '2px solid transparent',
-    background: 'rgba(255,255,255,0.05)',
-    cursor: 'pointer',
-    gap: '0.25rem',
-    transition: 'border-color 0.2s',
-  },
-  classCardSelected: {
-    borderColor: '#ffd700',
-    background: 'rgba(255,215,0,0.1)',
-  },
-  classIcon: {
-    fontSize: '1.5rem',
-  },
-  className: {
-    fontSize: '0.9rem',
-    fontWeight: 'bold',
-  },
-  classDesc: {
-    fontSize: '0.7rem',
-    opacity: 0.6,
-    textAlign: 'center',
-  },
-  createButtons: {
-    display: 'flex',
-    gap: '1rem',
-  },
-  button: {
-    flex: 1,
-    padding: '0.75rem',
-    fontSize: '1rem',
-    borderRadius: '12px',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  cancelButton: {
-    flex: 1,
-    padding: '0.75rem',
-    fontSize: '1rem',
-    borderRadius: '12px',
-    background: 'rgba(255,255,255,0.1)',
-    color: '#fff',
-  },
-  bottomButtons: {
-    position: 'fixed',
-    bottom: '20px',
-    left: '20px',
-    right: '20px',
-    display: 'flex',
-    gap: '1rem',
-    maxWidth: '400px',
-    margin: '0 auto',
-  },
-  releaseButton: {
-    flex: 1,
-    padding: '1rem',
-    fontSize: '1rem',
-    borderRadius: '12px',
-    background: 'rgba(255,107,107,0.3)',
-    color: '#fff',
-  },
-  enterButton: {
-    flex: 2,
-    padding: '1rem',
-    fontSize: '1.2rem',
-    borderRadius: '12px',
-    background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  disabledButton: {
-    opacity: 0.4,
-    cursor: 'not-allowed',
-  },
-  logoutButton: {
-    marginTop: '1rem',
-    padding: '0.5rem 1rem',
-    fontSize: '0.8rem',
-    borderRadius: '8px',
-    background: 'transparent',
-    color: '#666',
-    border: '1px solid #333',
-  },
-};

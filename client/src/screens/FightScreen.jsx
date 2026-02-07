@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Box, Typography, Button } from '@mui/material';
+import { Box, Typography } from '@mui/material';
 import { motion } from 'framer-motion';
 import { GiCrossedSwords } from 'react-icons/gi';
 import { BattleCharacter } from '../components/BattleCharacter.jsx';
@@ -20,6 +20,7 @@ import {
 } from '../game/engine.js';
 import { CHARACTER_TYPES } from '../game/types.js';
 import { chooseBossAction } from '../game/bossAI.js';
+import { useSkills } from '../hooks/useSkills.js';
 import { api } from '../api/client.js';
 
 // Set to true to use the old ActionPopover dialog instead of inline wheel
@@ -27,7 +28,7 @@ const DEBUG_ACTION_POPOVER = false;
 
 // Timing constants for boss action animations (ms)
 const IMPACT_DELAY = 1200;  // When damage applies + shake + combat text
-const CLEAR_DELAY = 2800;   // When animation clears and next starts
+const CLEAR_DELAY = 3600;   // When animation clears and next starts
 
 /**
  * Collect all consecutive boss/minion turns into an animation queue.
@@ -80,7 +81,8 @@ function collectBossTurns(startState) {
   return { actions, finalState: state };
 }
 
-export function FightScreen({ gameState, myPlayer, fetchState }) {
+export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onCloseAdmin }) {
+  const { skills: serverSkills, loading: skillsLoading } = useSkills();
   const [localFight, setLocalFight] = useState(null);
   const [logs, setLogs] = useState([]);
   const [showLog, setShowLog] = useState(false);
@@ -88,7 +90,6 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
   const [skillTreeOpen, setSkillTreeOpen] = useState(false);
   const [selectedCharacterForSkills, setSelectedCharacterForSkills] = useState(null);
   const [posting, setPosting] = useState(false);
-  const [showAdmin, setShowAdmin] = useState(false);
   const lastFightVersionRef = useRef(-1);
   const initRef = useRef(false);
 
@@ -106,6 +107,9 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
   // Inline wheel state (new flow)
   const [pendingWheelAction, setPendingWheelAction] = useState(null);
   const [isPlayerAnim, setIsPlayerAnim] = useState(false);
+
+  // Manual target selection state (for Precision etc.)
+  const [pendingManualAction, setPendingManualAction] = useState(null);
 
   const activeDungeonId = gameState?.activeDungeonId;
   const serverFight = gameState?.fightState;
@@ -217,12 +221,12 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
 
   // --- Initialize fight state ---
   useEffect(() => {
-    if (!activeDungeonId || initRef.current) return;
+    if (!activeDungeonId || initRef.current || skillsLoading || !serverSkills.length) return;
 
     if (!serverFight && gameState?.players) {
       initRef.current = true;
       try {
-        const fight = buildFightFromServer(gameState.players, activeDungeonId, dungeons);
+        const fight = buildFightFromServer(gameState.players, activeDungeonId, dungeons, serverSkills);
         setLocalFight(fight);
 
         api.postFightState(fight, 0).then(res => {
@@ -243,7 +247,7 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
         console.error('Failed to build fight:', err);
       }
     }
-  }, [activeDungeonId, serverFight, gameState?.players, dungeons, fetchState]);
+  }, [activeDungeonId, serverFight, gameState?.players, dungeons, fetchState, serverSkills, skillsLoading]);
 
   // Sync from server fight state
   useEffect(() => {
@@ -350,15 +354,16 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
     }
   }, []);
 
-  // --- Player Actions ---
-  const handleAction = useCallback((actionId) => {
+  // --- Execute action (shared by normal + manual targeting flows) ---
+  const executeAndAnimate = useCallback((actionId, manualTargetId) => {
     if (!currentCharacter || !isMyTurn) return;
 
     const stateBefore = cloneState(fightState);
     const { newState, result } = executeAction(
       fightState,
       currentCharacter.id,
-      actionId
+      actionId,
+      manualTargetId
     );
 
     if (!result.success) return;
@@ -380,7 +385,6 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
     const hasWheel = result.wheelResults?.length > 0;
 
     if (hasWheel) {
-      // Show the BattleWheel overlay first
       setPendingWheelAction({
         result,
         newState,
@@ -389,10 +393,65 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
         allCharacters: fightState.characters.filter(c => c.state.isAlive),
       });
     } else {
-      // No wheel — animate immediately via BattleFeedback
       animatePlayerAction(result, stateBefore, newState, currentCharacter);
     }
   }, [fightState, currentCharacter, isMyTurn, animatePlayerAction]);
+
+  // --- Player Actions ---
+  const handleAction = useCallback((actionId) => {
+    if (!currentCharacter || !isMyTurn) return;
+
+    const action = currentCharacter.actions.find(a => a.id === actionId);
+    if (!action) return;
+
+    // Manual targeting: select a target first
+    if (action.targetType === 'manual') {
+      // Determine if this targets allies (heals/buffs) or enemies (damage/debuffs)
+      const hasRevive = action.effects.some(e => e.type === 'revive');
+      const isFriendly = action.effects.some(e =>
+        e.type === 'heal' || e.type === 'modifyAP' || e.type === 'revive'
+      );
+
+      let validTargets;
+      if (isFriendly) {
+        // Revive targets dead allies; heals/buffs target alive allies
+        validTargets = fightState.characters.filter(c =>
+          c.type === CHARACTER_TYPES.PLAYER &&
+          (hasRevive ? !c.state.isAlive : c.state.isAlive)
+        );
+      } else {
+        validTargets = fightState.characters.filter(c =>
+          (c.type === CHARACTER_TYPES.BOSS || c.type === CHARACTER_TYPES.MINION) && c.state.isAlive
+        );
+      }
+
+      if (validTargets.length === 0) return;
+
+      // Auto-select if only one valid target
+      if (validTargets.length === 1) {
+        executeAndAnimate(actionId, validTargets[0].id);
+        return;
+      }
+
+      // Multiple targets: enter selection mode
+      setPendingManualAction({ actionId, actionName: action.name, isFriendly, hasRevive });
+      return;
+    }
+
+    executeAndAnimate(actionId);
+  }, [fightState, currentCharacter, isMyTurn, executeAndAnimate]);
+
+  // Handle enemy click during manual target selection
+  const handleTargetSelect = useCallback((enemyId) => {
+    if (!pendingManualAction) return;
+    const { actionId } = pendingManualAction;
+    setPendingManualAction(null);
+    executeAndAnimate(actionId, enemyId);
+  }, [pendingManualAction, executeAndAnimate]);
+
+  const cancelTargetSelection = useCallback(() => {
+    setPendingManualAction(null);
+  }, []);
 
   // Called when BattleWheel finishes spinning — transition to BattleFeedback
   const handleWheelComplete = useCallback(() => {
@@ -444,7 +503,7 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
     setPosting(true);
 
     try {
-      const fight = buildFightFromServer(gameState.players, activeDungeonId, dungeons);
+      const fight = buildFightFromServer(gameState.players, activeDungeonId, dungeons, serverSkills);
       setLocalFight(fight);
 
       const res = await api.postFightState(fight, lastFightVersionRef.current);
@@ -461,6 +520,7 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
       }]);
       setPendingAction(null);
       setPendingWheelAction(null);
+      setPendingManualAction(null);
       setAnimQueue([]);
       setActiveAnim(null);
       setHitTargets(new Set());
@@ -491,7 +551,7 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
     const crippled = cloneState(fightState);
     for (const c of crippled.characters) {
       if (c.type === CHARACTER_TYPES.BOSS || c.type === CHARACTER_TYPES.MINION) {
-        c.state.hp = 1;
+        c.state.health = 1;
       }
     }
     setLocalFight(crippled);
@@ -580,28 +640,14 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
             overflow: 'hidden',
           }}
         >
-          {/* Sync indicator + Admin button */}
-          <Box sx={{ position: 'absolute', top: 4, right: 40, zIndex: 10, display: 'flex', gap: 1, alignItems: 'center' }}>
-            {posting && (
+          {/* Sync indicator */}
+          {posting && (
+            <Box sx={{ position: 'absolute', top: 4, right: 40, zIndex: 10 }}>
               <Typography sx={{ color: 'primary.main', fontSize: '0.6rem', opacity: 0.7 }}>
                 syncing...
               </Typography>
-            )}
-            <Button
-              size="small"
-              onClick={() => setShowAdmin(true)}
-              sx={{
-                minWidth: 'auto',
-                minHeight: 'auto',
-                p: 0.5,
-                fontSize: '0.55rem',
-                color: 'rgba(168, 160, 149, 0.3)',
-                '&:hover': { color: 'text.secondary' },
-              }}
-            >
-              Admin
-            </Button>
-          </Box>
+            </Box>
+          )}
 
           {/* Level indicator */}
           <Box sx={{ textAlign: 'center', pt: 1, pb: 0.5 }}>
@@ -651,6 +697,8 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
                     isEnemy
                     size={enemy.type === CHARACTER_TYPES.BOSS ? 'boss' : 'normal'}
                     isBeingHit={hitTargets.has(enemy.id)}
+                    isTargetable={!!pendingManualAction && enemy.state.isAlive}
+                    onClick={pendingManualAction && enemy.state.isAlive ? () => handleTargetSelect(enemy.id) : undefined}
                   />
                 ));
               })()}
@@ -695,32 +743,83 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
                 flexWrap: 'wrap',
               }}
             >
-              {players.map(player => (
-                <BattleCharacter
-                  key={player.id}
-                  character={player}
-                  isCurrentTurn={currentCharacter?.id === player.id}
-                  isEnemy={false}
-                  onClick={() => handleOpenSkills(player)}
-                  isBeingHit={hitTargets.has(player.id)}
-                />
-              ))}
+              {players.map(player => {
+                const isValidTarget = pendingManualAction?.isFriendly && (
+                  pendingManualAction.hasRevive ? !player.state.isAlive : player.state.isAlive
+                );
+                return (
+                  <BattleCharacter
+                    key={player.id}
+                    character={player}
+                    isCurrentTurn={currentCharacter?.id === player.id}
+                    isEnemy={false}
+                    onClick={isValidTarget ? () => handleTargetSelect(player.id) : () => handleOpenSkills(player)}
+                    isBeingHit={hitTargets.has(player.id)}
+                    isTargetable={isValidTarget}
+                  />
+                );
+              })}
             </Box>
           </Box>
         </Box>
       </Box>
 
-      {/* Action Bar */}
-      <BattleActionBar
-        isMyTurn={isMyTurn && !isAnimating}
-        currentCharacter={currentCharacter}
-        myPlayer={myPlayer}
-        fightOver={fightState.isOver}
-        fightResult={fightState.result}
-        onAction={handleAction}
-        onRetry={handleRetryFight}
-        posting={posting || isAnimating}
-      />
+      {/* Action Bar or Target Selection Prompt */}
+      {pendingManualAction ? (
+        <Box
+          sx={{
+            borderTop: '2px solid rgba(245, 158, 11, 0.5)',
+            borderRadius: '16px 16px 0 0',
+            px: 2,
+            py: 2,
+            pb: 'env(safe-area-inset-bottom, 12px)',
+            background: 'linear-gradient(0deg, rgba(0,0,0,0.6) 0%, rgba(26, 26, 46, 0.95) 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 2,
+          }}
+        >
+          <Typography
+            sx={{
+              color: 'primary.main',
+              fontWeight: 700,
+              fontSize: '0.9rem',
+              textShadow: '0 0 8px rgba(245, 158, 11, 0.4)',
+            }}
+          >
+            Tap {pendingManualAction.isFriendly ? 'an ally' : 'an enemy'} to {pendingManualAction.actionName}
+          </Typography>
+          <Box
+            onClick={cancelTargetSelection}
+            sx={{
+              px: 1.5,
+              py: 0.75,
+              borderRadius: 2,
+              border: '1px solid rgba(255,255,255,0.2)',
+              color: 'text.secondary',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              flexShrink: 0,
+              '&:active': { background: 'rgba(255,255,255,0.1)' },
+            }}
+          >
+            Cancel
+          </Box>
+        </Box>
+      ) : (
+        <BattleActionBar
+          isMyTurn={isMyTurn && !isAnimating}
+          currentCharacter={currentCharacter}
+          myPlayer={myPlayer}
+          fightOver={fightState.isOver}
+          fightResult={fightState.result}
+          onAction={handleAction}
+          onRetry={handleRetryFight}
+          posting={posting || isAnimating}
+        />
+      )}
 
       {/* Battle Feedback Overlay (beams, banner, combat text) */}
       <BattleFeedback
@@ -771,9 +870,10 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
         <AdminModal
           gameState={gameState}
           dungeons={dungeons}
-          onClose={() => setShowAdmin(false)}
+          onClose={onCloseAdmin}
           fetchState={fetchState}
           onCrippleBoss={handleCrippleBoss}
+          onRestartFight={handleRetryFight}
           onOpenLog={() => setShowLog(true)}
         />
       )}

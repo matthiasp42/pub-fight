@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { api } from '../api/client';
+import { api, GameNotFoundError } from '../api/client';
 
 const POLL_INTERVAL = 2000;
 const STATE_CACHE_KEY = 'pubfight_gameState';
@@ -33,7 +33,15 @@ export function useGameState() {
         // Server restarted - push our state
         console.log('Server behind, restoring state...');
         setSyncStatus('restoring');
-        await api.restore(localStateRef.current);
+        try {
+          await api.restore(localStateRef.current);
+        } catch (restoreErr) {
+          if (restoreErr instanceof GameNotFoundError) {
+            setSyncStatus('game_not_found');
+            return;
+          }
+          throw restoreErr;
+        }
         setSyncStatus('synced');
       } else {
         // Server has same or newer - update local
@@ -50,6 +58,21 @@ export function useGameState() {
       }
       setError(null);
     } catch (err) {
+      if (err instanceof GameNotFoundError) {
+        // Game was deleted or server restarted without it
+        // Try restore if we have cached state
+        if (localStateRef.current) {
+          try {
+            await api.restore(localStateRef.current);
+            setSyncStatus('synced');
+            return;
+          } catch (restoreErr) {
+            // Restore also failed, game is truly gone
+          }
+        }
+        setSyncStatus('game_not_found');
+        return;
+      }
       console.error('Fetch error:', err);
       setSyncStatus('disconnected');
       setError(err.message);
@@ -81,6 +104,13 @@ export function useGameState() {
     });
   }, []);
 
+  const resetState = useCallback(() => {
+    localStateRef.current = null;
+    setGameState(null);
+    setSyncStatus('connecting');
+    setError(null);
+  }, []);
+
   // Helper to find which player this session controls
   const getMyPlayer = useCallback(() => {
     if (!gameState?.players) return null;
@@ -97,5 +127,6 @@ export function useGameState() {
     fetchState,
     updateLocalState,
     getMyPlayer,
+    resetState,
   };
 }

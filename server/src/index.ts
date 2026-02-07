@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ALL_SKILLS, getSkillsByClass, getSkillById } from './skills/index.js';
-import { CharacterClass, GamePhase, GameState, PlayerCharacter, CharacterAttributes } from './types/game.js';
+import { CharacterClass, GamePhase, GameState, GameInstance, PlayerCharacter, CharacterAttributes, DungeonDefinition } from './types/game.js';
 import { CLASS_BASE_ATTRIBUTES } from './classes/index.js';
 import { DUNGEON_DEFINITIONS } from './dungeons/index.js';
 import { BOSS_DEFINITIONS } from './bosses/index.js';
@@ -16,26 +16,52 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const PASSWORD = process.env.GAME_PASSWORD || 'pubfight';
 
-interface SessionRequest extends Request {
+interface GameRequest extends Request {
   sessionId?: string;
+  game?: GameInstance;
 }
 
-// In-memory game state
-let gameState: GameState = {
-  version: 1,
-  phase: 'lobby',
-  clearedDungeons: [],
-  activeDungeonId: null,
-  fightState: null,
-  fightVersion: 0,
-  players: {},
-};
+// Multi-game storage
+const games = new Map<string, GameInstance>();
 
-// Mutable dungeon definitions (can be updated via admin)
-let dungeons = DUNGEON_DEFINITIONS.map(d => ({ ...d }));
-
-// Session tracking
+// Session tracking (global, not per-game)
 const sessions = new Set<string>();
+
+// Game code generation: 4-char uppercase alphanumeric, excluding I/O/0/1
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function generateGameCode(): string {
+  let code: string;
+  do {
+    code = '';
+    for (let i = 0; i < 4; i++) {
+      code += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+    }
+  } while (games.has(code));
+  return code;
+}
+
+function createGameInstance(code: string): GameInstance {
+  return {
+    gameCode: code,
+    gameState: {
+      version: 1,
+      phase: 'lobby',
+      clearedDungeons: [],
+      activeDungeonId: null,
+      fightState: null,
+      fightVersion: 0,
+      players: {},
+    },
+    dungeons: DUNGEON_DEFINITIONS.map(d => ({ ...d })),
+    createdAt: Date.now(),
+    lastActivity: Date.now(),
+  };
+}
+
+function touchGame(game: GameInstance): void {
+  game.lastActivity = Date.now();
+}
 
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
@@ -57,7 +83,7 @@ app.post('/api/auth', (req: Request, res: Response) => {
 });
 
 // Middleware to check session
-const requireSession = (req: SessionRequest, res: Response, next: NextFunction) => {
+const requireSession = (req: GameRequest, res: Response, next: NextFunction) => {
   const sessionId = (req.headers['x-session-id'] as string) || req.body.sessionId;
   if (!sessionId || !sessions.has(sessionId)) {
     return res.status(401).json({ error: 'Invalid session' });
@@ -66,17 +92,59 @@ const requireSession = (req: SessionRequest, res: Response, next: NextFunction) 
   next();
 };
 
-// Get current game state + dungeon definitions
-app.get('/api/state', requireSession, (req: Request, res: Response) => {
-  res.json({ ...gameState, dungeons });
+// Middleware to resolve game from X-Game-Id header
+const requireGame = (req: GameRequest, res: Response, next: NextFunction) => {
+  const gameId = req.headers['x-game-id'] as string;
+  if (!gameId) {
+    return res.status(400).json({ error: 'Missing X-Game-Id header', code: 'GAME_NOT_FOUND' });
+  }
+  const game = games.get(gameId.toUpperCase());
+  if (!game) {
+    return res.status(404).json({ error: 'Game not found', code: 'GAME_NOT_FOUND' });
+  }
+  req.game = game;
+  touchGame(game);
+  next();
+};
+
+// ---- Game management endpoints ----
+
+// Create a new game
+app.post('/api/games', requireSession, (req: GameRequest, res: Response) => {
+  const code = generateGameCode();
+  const game = createGameInstance(code);
+  games.set(code, game);
+  res.json({ gameCode: code });
 });
 
-// Get all skills
+// Check if a game exists (for join validation)
+app.get('/api/games/:code', requireSession, (req: GameRequest, res: Response) => {
+  const code = req.params.code.toUpperCase();
+  const game = games.get(code);
+  if (!game) {
+    return res.json({ exists: false });
+  }
+  res.json({
+    exists: true,
+    phase: game.gameState.phase,
+    playerCount: Object.keys(game.gameState.players).length,
+  });
+});
+
+// ---- Game-specific endpoints (all require X-Game-Id) ----
+
+// Get current game state + dungeon definitions
+app.get('/api/state', requireSession, requireGame, (req: GameRequest, res: Response) => {
+  const { gameState, dungeons, gameCode } = req.game!;
+  res.json({ ...gameState, dungeons, gameCode });
+});
+
+// Get all skills (no game needed)
 app.get('/api/skills', (req: Request, res: Response) => {
   res.json(ALL_SKILLS);
 });
 
-// Get skills for a specific class
+// Get skills for a specific class (no game needed)
 app.get('/api/skills/:class', (req: Request, res: Response) => {
   const characterClass = req.params.class as CharacterClass;
   const validClasses: CharacterClass[] = ['tank', 'wizard', 'alchemist', 'warrior'];
@@ -89,18 +157,18 @@ app.get('/api/skills/:class', (req: Request, res: Response) => {
   res.json(skills);
 });
 
-// Get boss definitions
+// Get boss definitions (no game needed)
 app.get('/api/bosses', (req: Request, res: Response) => {
   res.json(BOSS_DEFINITIONS);
 });
 
 // Join game - create new player or take over existing
-app.post('/api/join', requireSession, (req: SessionRequest, res: Response) => {
+app.post('/api/join', requireSession, requireGame, (req: GameRequest, res: Response) => {
   const { playerId, name, characterClass } = req.body;
   const sessionId = req.sessionId!;
+  const { gameState } = req.game!;
 
   if (playerId) {
-    // Take control of existing player - always allow (no 409, enables device swap)
     const player = gameState.players[playerId];
     if (!player) {
       return res.status(404).json({ error: 'Player not found' });
@@ -109,7 +177,6 @@ app.post('/api/join', requireSession, (req: SessionRequest, res: Response) => {
     gameState.version++;
     res.json({ success: true, player });
   } else if (name) {
-    // Create new player
     const validClasses: CharacterClass[] = ['tank', 'wizard', 'alchemist', 'warrior'];
     const playerClass = validClasses.includes(characterClass) ? characterClass : 'warrior';
     const baseAttrs = CLASS_BASE_ATTRIBUTES[playerClass as CharacterClass];
@@ -121,7 +188,7 @@ app.post('/api/join', requireSession, (req: SessionRequest, res: Response) => {
       class: playerClass,
       level: 1,
       attributePoints: 0,
-      perkPoints: 1, // Start with 1 perk point at level 1
+      perkPoints: 1,
       ownedSkillIds: [],
       attributes: { ...baseAttrs },
       baseAttributes: { ...baseAttrs },
@@ -136,9 +203,10 @@ app.post('/api/join', requireSession, (req: SessionRequest, res: Response) => {
 });
 
 // Release control of a player
-app.post('/api/release', requireSession, (req: SessionRequest, res: Response) => {
+app.post('/api/release', requireSession, requireGame, (req: GameRequest, res: Response) => {
   const { playerId } = req.body;
   const sessionId = req.sessionId!;
+  const { gameState } = req.game!;
 
   const player = gameState.players[playerId];
   if (!player) {
@@ -154,7 +222,9 @@ app.post('/api/release', requireSession, (req: SessionRequest, res: Response) =>
 });
 
 // Start game: lobby -> map
-app.post('/api/start-game', requireSession, (req: SessionRequest, res: Response) => {
+app.post('/api/start-game', requireSession, requireGame, (req: GameRequest, res: Response) => {
+  const { gameState } = req.game!;
+
   if (gameState.phase !== 'lobby') {
     return res.status(400).json({ error: 'Game not in lobby phase' });
   }
@@ -170,8 +240,9 @@ app.post('/api/start-game', requireSession, (req: SessionRequest, res: Response)
 });
 
 // Enter dungeon: map -> fight
-app.post('/api/enter-dungeon', requireSession, (req: SessionRequest, res: Response) => {
+app.post('/api/enter-dungeon', requireSession, requireGame, (req: GameRequest, res: Response) => {
   const { dungeonId } = req.body;
+  const { gameState, dungeons } = req.game!;
 
   if (gameState.phase !== 'map') {
     return res.status(400).json({ error: 'Not in map phase' });
@@ -195,8 +266,9 @@ app.post('/api/enter-dungeon', requireSession, (req: SessionRequest, res: Respon
 });
 
 // Update fight state (version-gated)
-app.post('/api/fight-state', requireSession, (req: SessionRequest, res: Response) => {
+app.post('/api/fight-state', requireSession, requireGame, (req: GameRequest, res: Response) => {
   const { fightState, expectedVersion } = req.body;
+  const { gameState } = req.game!;
 
   if (gameState.phase !== 'fight') {
     return res.status(400).json({ error: 'Not in fight phase' });
@@ -213,8 +285,9 @@ app.post('/api/fight-state', requireSession, (req: SessionRequest, res: Response
 });
 
 // Dungeon cleared: fight -> levelup
-app.post('/api/dungeon-cleared', requireSession, (req: SessionRequest, res: Response) => {
+app.post('/api/dungeon-cleared', requireSession, requireGame, (req: GameRequest, res: Response) => {
   const { dungeonId } = req.body;
+  const { gameState } = req.game!;
 
   if (gameState.phase !== 'fight') {
     return res.status(400).json({ error: 'Not in fight phase' });
@@ -230,12 +303,29 @@ app.post('/api/dungeon-cleared', requireSession, (req: SessionRequest, res: Resp
 
   gameState.clearedDungeons.push(dungeonId);
 
-  // Level up all players
+  // Snapshot before awarding points (so undo restores pre-distribution state)
+  const snapshots: Record<string, import('./types/game.js').LevelupSnapshot> = {};
+  for (const [id, player] of Object.entries(gameState.players)) {
+    snapshots[id] = {
+      attributes: { ...player.attributes },
+      ownedSkillIds: [...player.ownedSkillIds],
+      attributePoints: player.attributePoints,
+      perkPoints: player.perkPoints,
+    };
+  }
+
   for (const player of Object.values(gameState.players)) {
     player.level = gameState.clearedDungeons.length + 1;
     player.attributePoints += 2;
     player.perkPoints += 1;
   }
+
+  // Save snapshots with the freshly awarded points
+  for (const [id, snap] of Object.entries(snapshots)) {
+    snap.attributePoints = gameState.players[id].attributePoints;
+    snap.perkPoints = gameState.players[id].perkPoints;
+  }
+  gameState.levelupSnapshots = snapshots;
 
   gameState.phase = 'levelup';
   gameState.activeDungeonId = null;
@@ -246,8 +336,9 @@ app.post('/api/dungeon-cleared', requireSession, (req: SessionRequest, res: Resp
 });
 
 // Distribute attribute points
-app.post('/api/distribute-attributes', requireSession, (req: SessionRequest, res: Response) => {
+app.post('/api/distribute-attributes', requireSession, requireGame, (req: GameRequest, res: Response) => {
   const { playerId, deltas } = req.body;
+  const { gameState } = req.game!;
 
   if (gameState.phase !== 'levelup') {
     return res.status(400).json({ error: 'Not in levelup phase' });
@@ -258,7 +349,6 @@ app.post('/api/distribute-attributes', requireSession, (req: SessionRequest, res
     return res.status(404).json({ error: 'Player not found' });
   }
 
-  // Validate deltas sum to player's available points
   const validAttrs: (keyof CharacterAttributes)[] = [
     'maxHealth', 'maxAP', 'power', 'shieldCapacity', 'shieldStrength', 'dexterity', 'evasiveness'
   ];
@@ -278,7 +368,6 @@ app.post('/api/distribute-attributes', requireSession, (req: SessionRequest, res
     return res.status(400).json({ error: 'Not enough attribute points' });
   }
 
-  // Apply deltas
   for (const [attr, delta] of Object.entries(deltas)) {
     (player.attributes as any)[attr] += delta;
   }
@@ -289,8 +378,9 @@ app.post('/api/distribute-attributes', requireSession, (req: SessionRequest, res
 });
 
 // Unlock skill
-app.post('/api/unlock-skill', requireSession, (req: SessionRequest, res: Response) => {
+app.post('/api/unlock-skill', requireSession, requireGame, (req: GameRequest, res: Response) => {
   const { playerId, skillId } = req.body;
+  const { gameState } = req.game!;
 
   if (gameState.phase !== 'levelup' && gameState.phase !== 'lobby') {
     return res.status(400).json({ error: 'Cannot unlock skills in current phase' });
@@ -333,13 +423,42 @@ app.post('/api/unlock-skill', requireSession, (req: SessionRequest, res: Respons
   res.json({ success: true, player });
 });
 
-// Finish level up: levelup -> map or victory
-app.post('/api/finish-levelup', requireSession, (req: SessionRequest, res: Response) => {
+// Undo levelup choices: restore player to snapshot state
+app.post('/api/undo-levelup', requireSession, requireGame, (req: GameRequest, res: Response) => {
+  const { playerId } = req.body;
+  const { gameState } = req.game!;
+
   if (gameState.phase !== 'levelup') {
     return res.status(400).json({ error: 'Not in levelup phase' });
   }
 
-  // Check all players have spent all points
+  const player = gameState.players[playerId];
+  if (!player) {
+    return res.status(404).json({ error: 'Player not found' });
+  }
+
+  const snapshot = gameState.levelupSnapshots?.[playerId];
+  if (!snapshot) {
+    return res.status(400).json({ error: 'No snapshot available' });
+  }
+
+  player.attributes = { ...snapshot.attributes };
+  player.ownedSkillIds = [...snapshot.ownedSkillIds];
+  player.attributePoints = snapshot.attributePoints;
+  player.perkPoints = snapshot.perkPoints;
+
+  gameState.version++;
+  res.json({ success: true, player });
+});
+
+// Finish level up: levelup -> map or victory
+app.post('/api/finish-levelup', requireSession, requireGame, (req: GameRequest, res: Response) => {
+  const { gameState } = req.game!;
+
+  if (gameState.phase !== 'levelup') {
+    return res.status(400).json({ error: 'Not in levelup phase' });
+  }
+
   for (const player of Object.values(gameState.players)) {
     if (player.attributePoints > 0 || player.perkPoints > 0) {
       return res.status(400).json({
@@ -362,14 +481,29 @@ app.post('/api/finish-levelup', requireSession, (req: SessionRequest, res: Respo
 });
 
 // Restore state from client (after server restart)
-app.post('/api/restore', requireSession, (req: SessionRequest, res: Response) => {
+// Special: does its own game lookup, creates game if missing
+app.post('/api/restore', requireSession, (req: GameRequest, res: Response) => {
+  const gameId = (req.headers['x-game-id'] as string || '').toUpperCase();
+  if (!gameId) {
+    return res.status(400).json({ error: 'Missing X-Game-Id header' });
+  }
+
   const { version, phase, clearedDungeons, activeDungeonId, fightState, fightVersion, players } = req.body;
 
-  if (version > gameState.version) {
-    gameState = { version, phase, clearedDungeons, activeDungeonId, fightState, fightVersion, players };
+  let game = games.get(gameId);
+  if (!game) {
+    // Game doesn't exist on server (server restarted) — recreate it
+    game = createGameInstance(gameId);
+    games.set(gameId, game);
+  }
+
+  if (version > game.gameState.version) {
+    game.gameState = { version, phase, clearedDungeons, activeDungeonId, fightState, fightVersion, players };
+    touchGame(game);
     sessions.add(req.sessionId!);
     res.json({ success: true, restored: true });
   } else {
+    touchGame(game);
     res.json({ success: true, restored: false });
   }
 });
@@ -377,14 +511,14 @@ app.post('/api/restore', requireSession, (req: SessionRequest, res: Response) =>
 // ---- Admin Endpoints ----
 
 // Set cleared dungeons (nuclear escape hatch)
-app.post('/api/admin/set-cleared', requireSession, (req: SessionRequest, res: Response) => {
+app.post('/api/admin/set-cleared', requireSession, requireGame, (req: GameRequest, res: Response) => {
   const { clearedDungeonIds } = req.body;
+  const { gameState, dungeons } = req.game!;
 
   if (!Array.isArray(clearedDungeonIds)) {
     return res.status(400).json({ error: 'clearedDungeonIds must be an array' });
   }
 
-  // Validate dungeon IDs
   const validIds = dungeons.map(d => d.id);
   for (const id of clearedDungeonIds) {
     if (!validIds.includes(id)) {
@@ -394,14 +528,12 @@ app.post('/api/admin/set-cleared', requireSession, (req: SessionRequest, res: Re
 
   gameState.clearedDungeons = clearedDungeonIds;
 
-  // Recalculate all player levels and points
   for (const player of Object.values(gameState.players)) {
     player.level = gameState.clearedDungeons.length + 1;
 
     const totalAttrEarned = (player.level - 1) * 2;
-    const totalPerksEarned = player.level; // 1 at start + 1 per level-up
+    const totalPerksEarned = player.level;
 
-    // Calculate already spent
     const attrSpent = Object.keys(player.attributes).reduce((sum, key) => {
       const k = key as keyof CharacterAttributes;
       return sum + Math.max(0, player.attributes[k] - player.baseAttributes[k]);
@@ -412,13 +544,23 @@ app.post('/api/admin/set-cleared', requireSession, (req: SessionRequest, res: Re
     player.perkPoints = Math.max(0, totalPerksEarned - perksSpent);
   }
 
-  // Determine phase
   const anyUnspent = Object.values(gameState.players).some(
     p => p.attributePoints > 0 || p.perkPoints > 0
   );
 
   if (anyUnspent) {
     gameState.phase = 'levelup';
+    // Save snapshots for undo
+    const snapshots: Record<string, import('./types/game.js').LevelupSnapshot> = {};
+    for (const [id, player] of Object.entries(gameState.players)) {
+      snapshots[id] = {
+        attributes: { ...player.attributes },
+        ownedSkillIds: [...player.ownedSkillIds],
+        attributePoints: player.attributePoints,
+        perkPoints: player.perkPoints,
+      };
+    }
+    gameState.levelupSnapshots = snapshots;
   } else if (gameState.clearedDungeons.length >= 7) {
     gameState.phase = 'victory';
   } else {
@@ -432,10 +574,35 @@ app.post('/api/admin/set-cleared', requireSession, (req: SessionRequest, res: Re
   res.json({ success: true, gameState });
 });
 
+// Weaken boss: set all boss/minion HP to 1 (E2E test cheat)
+app.post('/api/admin/weaken-boss', requireSession, requireGame, (req: GameRequest, res: Response) => {
+  const { gameState } = req.game!;
+
+  if (gameState.phase !== 'fight' || !gameState.fightState) {
+    return res.status(400).json({ error: 'Not in fight phase or no fight state' });
+  }
+
+  const chars = gameState.fightState.characters;
+  if (!Array.isArray(chars)) {
+    return res.status(400).json({ error: 'Invalid fight state' });
+  }
+
+  for (const c of chars) {
+    if ((c.type === 'boss' || c.type === 'minion') && c.state?.isAlive) {
+      c.state.health = 1;
+    }
+  }
+
+  gameState.fightVersion++;
+  gameState.version++;
+  res.json({ success: true });
+});
+
 // Reset game
-app.post('/api/admin/reset-game', requireSession, (req: SessionRequest, res: Response) => {
-  gameState = {
-    version: gameState.version + 1,
+app.post('/api/admin/reset-game', requireSession, requireGame, (req: GameRequest, res: Response) => {
+  const game = req.game!;
+  game.gameState = {
+    version: game.gameState.version + 1,
     phase: 'lobby',
     clearedDungeons: [],
     activeDungeonId: null,
@@ -447,8 +614,9 @@ app.post('/api/admin/reset-game', requireSession, (req: SessionRequest, res: Res
 });
 
 // Set dungeon coordinates
-app.post('/api/admin/set-dungeon-coords', requireSession, (req: SessionRequest, res: Response) => {
+app.post('/api/admin/set-dungeon-coords', requireSession, requireGame, (req: GameRequest, res: Response) => {
   const { dungeonUpdates } = req.body;
+  const { gameState, dungeons } = req.game!;
 
   if (!Array.isArray(dungeonUpdates)) {
     return res.status(400).json({ error: 'dungeonUpdates must be an array' });
@@ -469,8 +637,9 @@ app.post('/api/admin/set-dungeon-coords', requireSession, (req: SessionRequest, 
 });
 
 // Force phase override
-app.post('/api/admin/set-phase', requireSession, (req: SessionRequest, res: Response) => {
+app.post('/api/admin/set-phase', requireSession, requireGame, (req: GameRequest, res: Response) => {
   const { phase } = req.body;
+  const { gameState } = req.game!;
   const validPhases: GamePhase[] = ['lobby', 'map', 'fight', 'levelup', 'victory'];
 
   if (!validPhases.includes(phase)) {
@@ -481,6 +650,21 @@ app.post('/api/admin/set-phase', requireSession, (req: SessionRequest, res: Resp
   gameState.version++;
   res.json({ success: true });
 });
+
+// ---- Cleanup timer ----
+// Delete games inactive for >24h, check every 30min
+const CLEANUP_INTERVAL = 30 * 60 * 1000;
+const MAX_INACTIVITY = 24 * 60 * 60 * 1000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [code, game] of games) {
+    if (now - game.lastActivity > MAX_INACTIVITY) {
+      games.delete(code);
+      console.log(`Cleaned up inactive game ${code}`);
+    }
+  }
+}, CLEANUP_INTERVAL);
 
 // Fallback to index.html for client-side routing
 app.get('*', (req: Request, res: Response) => {

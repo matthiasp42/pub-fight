@@ -391,7 +391,11 @@ export function resolveTargets(state, actor, action, manualTargetId) {
 
     case TARGET_TYPES.MANUAL: {
       const target = getCharacter(state, manualTargetId);
-      return { targets: target ? [target] : [], wheelResults: [] };
+      if (!target) return { targets: [], wheelResults: [] };
+      // Multi-hit manual (e.g. Thunderbolt): hit same target multiple times
+      const hits = action.hits || 1;
+      const targets = Array(hits).fill(target);
+      return { targets, wheelResults: [] };
     }
 
     case TARGET_TYPES.RANDOM: {
@@ -612,7 +616,14 @@ export function executeAction(state, actorId, actionId, manualTargetId) {
     }
   }
 
-  // 5. Second Wind: if this was a Rest action, heal the actor
+  // 5. Rest: heal 20% maxHP (rounded up)
+  if (actionId === 'rest') {
+    const restHealAmt = Math.ceil(actor.attributes.maxHealth * 0.2);
+    const healEffect = { type: EFFECT_TYPES.HEAL, amount: restHealAmt };
+    result.selfResults.push(applyEffect(actor, healEffect, actor));
+  }
+
+  // 6. Second Wind: if this was a Rest action, heal the actor
   if (actionId === 'rest' && actor.passives) {
     for (const passive of actor.passives) {
       if (passive.trigger === 'always' && passive.effect.type === 'secondWind') {

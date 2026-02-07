@@ -3,8 +3,6 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { api } from '../api/client';
 import { haversineDistance, hasGpsCoords } from '../utils/geo';
-import { AdminModal } from '../components/AdminModal';
-import { PartyDialog } from '../components/PartyDialog';
 
 const ARCHETYPE_LABELS = {
   swarmMaster: 'Swarm Master',
@@ -51,8 +49,6 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
   const [position, setPosition] = useState(null);
   const [gpsError, setGpsError] = useState(null);
   const [entering, setEntering] = useState(null);
-  const [showAdmin, setShowAdmin] = useState(false);
-  const [showParty, setShowParty] = useState(false);
   const [error, setError] = useState('');
   const [mapReady, setMapReady] = useState(false);
 
@@ -347,12 +343,6 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
           <span style={styles.clearedLabel}>
             {clearedDungeons.length}/7
           </span>
-          <button style={styles.adminButton} onClick={() => setShowParty(true)}>
-            Party
-          </button>
-          <button style={styles.adminButton} onClick={() => setShowAdmin(true)}>
-            Admin
-          </button>
         </div>
       </div>
 
@@ -406,21 +396,6 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
         </>
       )}
 
-      <PartyDialog
-        open={showParty}
-        onClose={() => setShowParty(false)}
-        players={gameState?.players ? Object.values(gameState.players) : []}
-        myPlayerId={myPlayer?.id}
-      />
-
-      {showAdmin && (
-        <AdminModal
-          gameState={gameState}
-          dungeons={dungeons}
-          onClose={() => setShowAdmin(false)}
-          fetchState={fetchState}
-        />
-      )}
     </div>
   );
 }
@@ -471,14 +446,6 @@ const styles = {
   clearedLabel: {
     fontSize: '0.85rem',
     color: '#888',
-  },
-  adminButton: {
-    padding: '0.4rem 0.8rem',
-    fontSize: '0.75rem',
-    borderRadius: '8px',
-    background: 'rgba(255,255,255,0.1)',
-    color: '#888',
-    border: '1px solid #444',
   },
   gpsNotice: {
     padding: '0.4rem 0.8rem',

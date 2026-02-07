@@ -1,9 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Box, Typography, Button } from '@mui/material';
-import { CHARACTER_TYPES } from '../game/types.js';
-
 const ENEMY_COLORS = ['#e53935', '#ff7043', '#ef5350', '#d84315'];
-const PARTY_COLORS = ['#2e7d32', '#00897b', '#388e3c', '#00695c'];
 const MISS_COLOR = '#2a2a2a';
 const ARROW_COLOR = '#ffd700';
 const HUB_COLOR = '#1e1e1e';
@@ -33,30 +30,11 @@ function buildVisualSectors(engineSectors, attacker, allCharacters) {
   );
   const totalMissAngle = missSector ? missSector.end - missSector.start : 0;
 
-  // Get friendly characters (attacker's allies, excluding attacker)
-  const isPlayerAttacker = attacker.type === CHARACTER_TYPES.PLAYER;
-  const friendlies = allCharacters.filter(
-    (c) =>
-      c.id !== attacker.id &&
-      c.state.isAlive &&
-      (isPlayerAttacker
-        ? c.type === CHARACTER_TYPES.PLAYER
-        : c.type === CHARACTER_TYPES.BOSS || c.type === CHARACTER_TYPES.MINION)
-  );
-
-  // Carve friendly sectors from miss zone
-  const friendlyAngleEach =
-    friendlies.length > 0
-      ? Math.min((totalMissAngle * 0.6) / friendlies.length, 40)
-      : 0;
-  const totalFriendlyAngle = friendlyAngleEach * friendlies.length;
-  const remainingMissAngle = totalMissAngle - totalFriendlyAngle;
-  const halfMiss = remainingMissAngle / 2;
-
   // Build visual sectors clockwise from top (0° = 12 o'clock)
-  // Layout: targets → miss-right → friendlies → miss-left
+  // Layout: targets at top, miss split into two halves at bottom
   const visualSectors = [];
   let angle = -(totalTargetAngle / 2); // Center targets at top (0°)
+  const halfMiss = totalMissAngle / 2;
 
   // Target sectors
   targetSectors.forEach((sector, i) => {
@@ -86,20 +64,6 @@ function buildVisualSectors(engineSectors, attacker, allCharacters) {
     });
     angle += halfMiss;
   }
-
-  // Friendly sectors (centered at bottom / 6 o'clock)
-  friendlies.forEach((friendly, i) => {
-    visualSectors.push({
-      type: 'friendly',
-      label: friendly.name[0],
-      fullName: friendly.name,
-      color: PARTY_COLORS[i % PARTY_COLORS.length],
-      startAngle: angle,
-      endAngle: angle + friendlyAngleEach,
-      character: friendly,
-    });
-    angle += friendlyAngleEach;
-  });
 
   // Miss-left (9 o'clock side)
   if (halfMiss > 0) {
@@ -229,7 +193,7 @@ export function AttackWheel({
         wheelResult.sectors,
         visualSectors
       );
-      const fullRotations = 3 + Math.random() * 2; // 3–5 full rotations
+      const fullRotations = 3 + Math.floor(Math.random() * 3); // 3, 4, or 5 full rotations
       const finalAngle = arrowAngle + fullRotations * 360 + (targetAngle - (arrowAngle % 360) + 360) % 360;
 
       // Small delay to ensure CSS transition applies after state change
