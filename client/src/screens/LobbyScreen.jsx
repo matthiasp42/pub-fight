@@ -358,7 +358,7 @@ export function LobbyScreen({ gameState, myPlayerId, onSelectPlayer, onReleasePl
         <Box
           sx={{
             position: 'fixed',
-            bottom: 20,
+            bottom: 'max(20px, env(safe-area-inset-bottom, 20px))',
             left: 20,
             right: 20,
             display: 'flex',

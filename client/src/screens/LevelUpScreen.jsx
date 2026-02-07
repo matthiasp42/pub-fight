@@ -458,7 +458,7 @@ const styles = {
   },
   continueButton: {
     position: 'fixed',
-    bottom: '20px',
+    bottom: 'max(20px, env(safe-area-inset-bottom, 20px))',
     left: '20px',
     right: '20px',
     maxWidth: '400px',
