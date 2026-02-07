@@ -5,7 +5,7 @@ import { api } from '../api/client';
 import { haversineDistance, hasGpsCoords } from '../utils/geo';
 import { PlayerDetailOverlay } from '../components/PlayerDetailOverlay';
 import { GiShield, GiSwordWound, GiWizardStaff, GiCauldron } from 'react-icons/gi';
-import { LuX } from 'react-icons/lu';
+import { LuX, LuLocate } from 'react-icons/lu';
 
 const ARCHETYPE_LABELS = {
   swarmMaster: 'Swarm Master',
@@ -63,6 +63,26 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
   const clearedDungeons = gameState?.clearedDungeons || [];
 
   const gpsEnabled = hasGpsCoords(dungeons);
+
+  const gpsStatus = !gpsEnabled ? 'off' : position ? 'active' : gpsError ? 'denied' : 'waiting';
+
+  const retryGps = useCallback(() => {
+    if (!navigator.geolocation) return;
+    setGpsError(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setGpsError(null);
+      },
+      (err) => {
+        setGpsError(err.message);
+        if (err.code === 1) { // PERMISSION_DENIED
+          alert('Location access denied.\n\niOS: Settings → Safari → Location\nAndroid: Tap the lock icon in the address bar');
+        }
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }, []);
 
   // Fetch boss definitions once
   useEffect(() => {
@@ -254,6 +274,20 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
       <div style={styles.header}>
         <h1 style={styles.title}>Pub Crawl</h1>
         <div style={styles.headerRight}>
+          {gpsEnabled && (
+            <button
+              style={{
+                ...styles.gpsBtn,
+                color: gpsStatus === 'active' ? '#10b981'
+                     : gpsStatus === 'denied' ? '#dc2626'
+                     : '#f59e0b',
+              }}
+              onClick={retryGps}
+              title={gpsStatus === 'active' ? 'GPS active' : gpsStatus === 'denied' ? 'GPS denied — tap to retry' : 'Waiting for GPS...'}
+            >
+              <LuLocate size={18} />
+            </button>
+          )}
           <span style={styles.partyLabel}>
             Lv {gameState?.clearedDungeons?.length + 1 || 1}
           </span>
@@ -291,9 +325,6 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
         </div>
       )}
 
-      {gpsEnabled && gpsError && (
-        <div style={styles.gpsNotice}>GPS: {gpsError}</div>
-      )}
       {error && <p style={styles.error}>{error}</p>}
 
       {gpsEnabled ? (
@@ -474,6 +505,17 @@ const styles = {
   clearedLabel: {
     fontSize: '0.85rem',
     color: '#888',
+  },
+  gpsBtn: {
+    background: 'transparent',
+    border: 'none',
+    padding: 4,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 44,
+    minHeight: 44,
+    cursor: 'pointer',
   },
   gpsNotice: {
     padding: '0.4rem 0.8rem',
