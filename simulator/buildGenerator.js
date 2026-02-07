@@ -5,8 +5,10 @@
  * Zero hardcoded skill names or class lists.
  */
 
-import { CLASS_BASE_ATTRIBUTES } from '../server/dist/classes/index.js';
+import classData from '../shared/classes.json' with { type: 'json' };
 import { ALL_SKILLS, SKILLS_BY_CLASS } from '../server/dist/skills/index.js';
+
+const CLASS_BASE_ATTRIBUTES = classData.default || classData;
 import { getActionsForCharacter } from '../client/src/game/actions.js';
 import { CHARACTER_TYPES } from '../client/src/game/types.js';
 

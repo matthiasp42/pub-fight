@@ -20,8 +20,12 @@ import { fileURLToPath } from 'node:url';
 import { cpus } from 'node:os';
 import { parseArgs } from 'node:util';
 
-import { BOSS_DEFINITIONS } from '../client/src/game/bosses.js';
-import { CLASS_BASE_ATTRIBUTES } from '../server/dist/classes/index.js';
+import bossData from '../shared/bosses.json' with { type: 'json' };
+import classData from '../shared/classes.json' with { type: 'json' };
+
+const _bossJson = bossData.default || bossData;
+const BOSS_DEFINITIONS = _bossJson.bosses;
+const CLASS_BASE_ATTRIBUTES = classData.default || classData;
 import {
   generateBuildsForClass,
   getClassNames,

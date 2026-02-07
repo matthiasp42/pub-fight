@@ -151,7 +151,7 @@ export function runFight(builds, bossLevel, aiStrategy = 'balanced') {
       action = choice.action;
       manualTargetId = choice.manualTargetId;
     } else {
-      action = chooseBossAction(actor);
+      action = chooseBossAction(actor, state);
     }
 
     if (!action) {

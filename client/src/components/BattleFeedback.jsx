@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Box, Typography } from '@mui/material';
 import { motion, AnimatePresence } from 'framer-motion';
-import { GiDeathSkull, GiAngularSpider } from 'react-icons/gi';
+import { GiDeathSkull, GiAngularSpider, GiSwordWound } from 'react-icons/gi';
 import { EFFECT_TYPES, CHARACTER_TYPES } from '../game/types.js';
 
 function getCharacterPos(id) {
@@ -61,7 +61,7 @@ function getSelfCombatTexts(selfEffects) {
  * @param {{ animation: object|null, showImpact: boolean }} props
  * animation shape: { actorId, actorName, actorType, actionName, targetResults, selfEffects }
  */
-export function BattleFeedback({ animation, showImpact }) {
+export function BattleFeedback({ animation, showImpact, isPlayerAction }) {
   const [positions, setPositions] = useState({ from: null, targets: [], self: null });
 
   useEffect(() => {
@@ -89,7 +89,10 @@ export function BattleFeedback({ animation, showImpact }) {
   if (!animation) return null;
 
   const { from, targets, self: selfPos } = positions;
-  const BossIcon = animation.actorType === CHARACTER_TYPES.MINION ? GiAngularSpider : GiDeathSkull;
+  const BannerIcon = isPlayerAction
+    ? GiSwordWound
+    : animation.actorType === CHARACTER_TYPES.MINION ? GiAngularSpider : GiDeathSkull;
+  const bannerColor = isPlayerAction ? '#f59e0b' : '#dc2626';
   const selfTexts = getSelfCombatTexts(animation.selfEffects);
 
   return (
@@ -125,14 +128,14 @@ export function BattleFeedback({ animation, showImpact }) {
               px: 2.5,
               py: 1,
               borderRadius: 2,
-              background: 'linear-gradient(135deg, rgba(220, 38, 38, 0.25) 0%, rgba(0,0,0,0.85) 50%, rgba(220, 38, 38, 0.25) 100%)',
-              border: '1px solid rgba(220, 38, 38, 0.4)',
-              boxShadow: '0 4px 24px rgba(0,0,0,0.6), 0 0 20px rgba(220, 38, 38, 0.15)',
+              background: `linear-gradient(135deg, ${bannerColor}40 0%, rgba(0,0,0,0.85) 50%, ${bannerColor}40 100%)`,
+              border: `1px solid ${bannerColor}66`,
+              boxShadow: `0 4px 24px rgba(0,0,0,0.6), 0 0 20px ${bannerColor}26`,
               backdropFilter: 'blur(8px)',
               whiteSpace: 'nowrap',
             }}
           >
-            <BossIcon size={20} color="#dc2626" />
+            <BannerIcon size={20} color={bannerColor} />
             <Typography
               sx={{
                 color: 'text.primary',
@@ -144,10 +147,10 @@ export function BattleFeedback({ animation, showImpact }) {
             </Typography>
             <Typography
               sx={{
-                color: 'secondary.main',
+                color: bannerColor,
                 fontWeight: 800,
                 fontSize: '0.85rem',
-                textShadow: '0 0 8px rgba(220, 38, 38, 0.4)',
+                textShadow: `0 0 8px ${bannerColor}66`,
               }}
             >
               {animation.actionName}

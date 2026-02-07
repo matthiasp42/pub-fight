@@ -6,6 +6,7 @@ import { BattleCharacter } from '../components/BattleCharacter.jsx';
 import { BattleTurnStrip } from '../components/BattleTurnStrip.jsx';
 import { BattleActionBar } from '../components/BattleActionBar.jsx';
 import { BattleFeedback } from '../components/BattleFeedback.jsx';
+import { BattleWheel } from '../components/BattleWheel.jsx';
 import { ActionPopover } from '../components/ActionPopover.jsx';
 import { GameLog } from '../components/GameLog.jsx';
 import { SkillTreeDialog } from '../components/SkillTreeDialog.jsx';
@@ -20,6 +21,9 @@ import {
 import { CHARACTER_TYPES } from '../game/types.js';
 import { chooseBossAction } from '../game/bossAI.js';
 import { api } from '../api/client.js';
+
+// Set to true to use the old ActionPopover dialog instead of inline wheel
+const DEBUG_ACTION_POPOVER = false;
 
 // Timing constants for boss action animations (ms)
 const IMPACT_DELAY = 1200;  // When damage applies + shake + combat text
@@ -36,7 +40,7 @@ function collectBossTurns(startState) {
   let actor = getCurrentTurnCharacter(state);
 
   while (actor && actor.type !== CHARACTER_TYPES.PLAYER && !state.isOver) {
-    const action = chooseBossAction(actor);
+    const action = chooseBossAction(actor, state);
     if (!action) {
       state = advanceTurn(state);
       actor = getCurrentTurnCharacter(state);
@@ -99,6 +103,10 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
   const postToServerRef = useRef(null);
   const bossTurnScheduledRef = useRef(false);
 
+  // Inline wheel state (new flow)
+  const [pendingWheelAction, setPendingWheelAction] = useState(null);
+  const [isPlayerAnim, setIsPlayerAnim] = useState(false);
+
   const activeDungeonId = gameState?.activeDungeonId;
   const serverFight = gameState?.fightState;
   const serverFightVersion = gameState?.fightVersion ?? 0;
@@ -148,6 +156,7 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
     const isLastInQueue = animQueue.length === 1;
 
     // Phase 1: Show banner + beam starts
+    setIsPlayerAnim(!!current.isPlayerAction);
     setActiveAnim({
       actorId: current.actorId,
       actorName: current.actorName,
@@ -201,6 +210,7 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
       return;
     }
 
+    setIsPlayerAnim(false);
     finalAnimStateRef.current = finalState;
     setAnimQueue(actions);
   }, [postToServer]);
@@ -293,6 +303,53 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
     };
   }, [fightState?.currentTurnIndex, posting, animQueue.length]);
 
+  // Feed a player action through the animation queue (same system as boss turns)
+  const animatePlayerAction = useCallback((result, stateBefore, newState, actor) => {
+    const stateAfterTurn = advanceTurn(newState);
+    const logEntry = {
+      timestamp: Date.now(),
+      type: 'action',
+      stateBefore,
+      stateAfter: newState,
+      actionResult: result,
+      description: `${actor.name} used ${result.actionName}`,
+    };
+
+    const animAction = {
+      actorId: actor.id,
+      actorName: actor.name,
+      actorType: actor.type,
+      actionName: result.actionName,
+      result,
+      logEntry,
+      stateAfterAction: newState,
+      stateAfterTurn,
+      isPlayerAction: true,
+    };
+
+    // Check if boss turns follow
+    const nextActor = getCurrentTurnCharacter(stateAfterTurn);
+    const hasBossTurns = nextActor &&
+      nextActor.type !== CHARACTER_TYPES.PLAYER &&
+      !stateAfterTurn.isOver;
+
+    if (hasBossTurns) {
+      // Queue player anim, then collect + queue boss anims
+      const { actions: bossActions, finalState } = collectBossTurns(stateAfterTurn);
+      const allActions = [animAction, ...bossActions];
+      finalAnimStateRef.current = finalState;
+      setIsPlayerAnim(true);
+      setPosting(true);
+      setAnimQueue(allActions);
+    } else {
+      // Just the player action, then post
+      finalAnimStateRef.current = stateAfterTurn;
+      setIsPlayerAnim(true);
+      setPosting(true);
+      setAnimQueue([animAction]);
+    }
+  }, []);
+
   // --- Player Actions ---
   const handleAction = useCallback((actionId) => {
     if (!currentCharacter || !isMyTurn) return;
@@ -304,7 +361,10 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
       actionId
     );
 
-    if (result.success) {
+    if (!result.success) return;
+
+    // Old debug flow
+    if (DEBUG_ACTION_POPOVER) {
       setPendingAction({
         result,
         newState,
@@ -313,8 +373,34 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
         attacker: currentCharacter,
         allCharacters: fightState.characters.filter(c => c.state.isAlive),
       });
+      return;
     }
-  }, [fightState, currentCharacter, isMyTurn]);
+
+    // New inline flow
+    const hasWheel = result.wheelResults?.length > 0;
+
+    if (hasWheel) {
+      // Show the BattleWheel overlay first
+      setPendingWheelAction({
+        result,
+        newState,
+        stateBefore,
+        actor: currentCharacter,
+        allCharacters: fightState.characters.filter(c => c.state.isAlive),
+      });
+    } else {
+      // No wheel — animate immediately via BattleFeedback
+      animatePlayerAction(result, stateBefore, newState, currentCharacter);
+    }
+  }, [fightState, currentCharacter, isMyTurn, animatePlayerAction]);
+
+  // Called when BattleWheel finishes spinning — transition to BattleFeedback
+  const handleWheelComplete = useCallback(() => {
+    if (!pendingWheelAction) return;
+    const { result, stateBefore, newState, actor } = pendingWheelAction;
+    setPendingWheelAction(null);
+    animatePlayerAction(result, stateBefore, newState, actor);
+  }, [pendingWheelAction, animatePlayerAction]);
 
   const handleContinue = useCallback(async () => {
     if (!pendingAction) return;
@@ -374,9 +460,11 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
         description: 'Fight restarted!',
       }]);
       setPendingAction(null);
+      setPendingWheelAction(null);
       setAnimQueue([]);
       setActiveAnim(null);
       setHitTargets(new Set());
+      setIsPlayerAnim(false);
       animPlayingRef.current = false;
       bossTurnScheduledRef.current = false;
       animTimersRef.current.forEach(clearTimeout);
@@ -449,7 +537,7 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
   const myCharacter = players.find(p => p.id === myPlayer?.id);
 
   // During animations, disable player actions
-  const isAnimating = animQueue.length > 0 || activeAnim !== null;
+  const isAnimating = animQueue.length > 0 || activeAnim !== null || pendingWheelAction !== null;
 
   return (
     <Box
@@ -550,16 +638,22 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
                 flexWrap: 'wrap',
               }}
             >
-              {enemies.map(enemy => (
-                <BattleCharacter
-                  key={enemy.id}
-                  character={enemy}
-                  isCurrentTurn={currentCharacter?.id === enemy.id}
-                  isEnemy
-                  size={enemy.type === CHARACTER_TYPES.BOSS ? 'boss' : 'normal'}
-                  isBeingHit={hitTargets.has(enemy.id)}
-                />
-              ))}
+              {(() => {
+                const boss = enemies.find(e => e.type === CHARACTER_TYPES.BOSS);
+                const minions = enemies.filter(e => e.type === CHARACTER_TYPES.MINION);
+                const half = Math.ceil(minions.length / 2);
+                const ordered = [...minions.slice(0, half), ...(boss ? [boss] : []), ...minions.slice(half)];
+                return ordered.map(enemy => (
+                  <BattleCharacter
+                    key={enemy.id}
+                    character={enemy}
+                    isCurrentTurn={currentCharacter?.id === enemy.id}
+                    isEnemy
+                    size={enemy.type === CHARACTER_TYPES.BOSS ? 'boss' : 'normal'}
+                    isBeingHit={hitTargets.has(enemy.id)}
+                  />
+                ));
+              })()}
             </Box>
           </Box>
 
@@ -632,16 +726,29 @@ export function FightScreen({ gameState, myPlayer, fetchState }) {
       <BattleFeedback
         animation={activeAnim}
         showImpact={showImpact}
+        isPlayerAction={isPlayerAnim}
       />
 
-      {/* Action Popover (player action dialog) */}
-      <ActionPopover
-        open={!!pendingAction}
-        actionResult={pendingAction?.result}
-        attacker={pendingAction?.attacker || null}
-        allCharacters={pendingAction?.allCharacters || []}
-        onContinue={handleContinue}
-      />
+      {/* Inline Battle Wheel (new flow) */}
+      {pendingWheelAction && (
+        <BattleWheel
+          wheelResults={pendingWheelAction.result.wheelResults}
+          attacker={pendingWheelAction.actor}
+          allCharacters={pendingWheelAction.allCharacters}
+          onComplete={handleWheelComplete}
+        />
+      )}
+
+      {/* Action Popover (old debug flow) */}
+      {DEBUG_ACTION_POPOVER && (
+        <ActionPopover
+          open={!!pendingAction}
+          actionResult={pendingAction?.result}
+          attacker={pendingAction?.attacker || null}
+          allCharacters={pendingAction?.allCharacters || []}
+          onContinue={handleContinue}
+        />
+      )}
 
       {/* Game Log */}
       <GameLog logs={logs} open={showLog} onToggle={() => setShowLog(!showLog)} />

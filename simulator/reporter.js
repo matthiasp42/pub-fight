@@ -3,8 +3,11 @@
  */
 
 import { writeFileSync } from 'node:fs';
-import { BOSS_DEFINITIONS } from '../client/src/game/bosses.js';
+import bossData from '../shared/bosses.json' with { type: 'json' };
 import { ALL_SKILLS } from '../server/dist/skills/index.js';
+
+const _bossJson = bossData.default || bossData;
+const BOSS_DEFINITIONS = _bossJson.bosses;
 
 // ---------------------------------------------------------------------------
 // Console reporter

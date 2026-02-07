@@ -1,40 +1,5 @@
 import type { CharacterClass, CharacterAttributes } from '../types/game.js';
+import classData from '../../../shared/classes.json' with { type: 'json' };
 
-export const CLASS_BASE_ATTRIBUTES: Record<CharacterClass, CharacterAttributes> = {
-  tank: {
-    maxHealth: 16,
-    maxAP: 3,
-    power: 0,
-    shieldCapacity: 3,
-    shieldStrength: 3,
-    dexterity: 50,
-    evasiveness: 15,
-  },
-  warrior: {
-    maxHealth: 12,
-    maxAP: 3,
-    power: 2,
-    shieldCapacity: 1,
-    shieldStrength: 2,
-    dexterity: 65,
-    evasiveness: 25,
-  },
-  wizard: {
-    maxHealth: 10,
-    maxAP: 4,
-    power: 0,
-    shieldCapacity: 1,
-    shieldStrength: 2,
-    dexterity: 70,
-    evasiveness: 30,
-  },
-  alchemist: {
-    maxHealth: 12,
-    maxAP: 3,
-    power: 0,
-    shieldCapacity: 2,
-    shieldStrength: 2,
-    dexterity: 55,
-    evasiveness: 25,
-  },
-};
+export const CLASS_BASE_ATTRIBUTES: Record<CharacterClass, CharacterAttributes> =
+  classData as Record<CharacterClass, CharacterAttributes>;
