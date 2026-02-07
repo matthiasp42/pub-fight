@@ -96,9 +96,8 @@ export function TurnBar({ characters, turnOrder, currentTurnIndex }) {
                     color: '#fff',
                     display: 'block',
                     fontWeight: isCurrent ? 'bold' : 'normal',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
+                    wordBreak: 'break-word',
+                    lineHeight: 1.2,
                   }}
                 >
                   {character.name}

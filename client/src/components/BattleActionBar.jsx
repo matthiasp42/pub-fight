@@ -122,6 +122,7 @@ function getPassiveDescription(passive) {
 export function BattleActionBar({
   isMyTurn,
   currentCharacter,
+  myCharacter,
   myPlayer,
   fightOver,
   fightResult,
@@ -265,43 +266,11 @@ export function BattleActionBar({
 
   if (!currentCharacter) return null;
 
-  // Not my turn - waiting message
-  if (!isMyTurn) {
-    return (
-      <Box
-        sx={{
-          ...sheetSx,
-          px: 2,
-          py: 2.5,
-          background: 'linear-gradient(0deg, rgba(0,0,0,0.5) 0%, rgba(26, 26, 46, 0.95) 100%)',
-          borderColor: 'rgba(255,255,255,0.06)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: 80,
-        }}
-      >
-        <motion.div
-          animate={{ opacity: [0.5, 1, 0.5] }}
-          transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-        >
-          <Typography
-            sx={{
-              color: 'text.secondary',
-              fontSize: '0.85rem',
-              fontWeight: 500,
-            }}
-          >
-            Waiting for {currentCharacter.name}...
-          </Typography>
-        </motion.div>
-      </Box>
-    );
-  }
+  // Resolve which character's skills to show
+  const playerChar = isMyTurn ? currentCharacter : myCharacter;
+  const actions = playerChar?.actions || [];
 
-  // My turn - show actions
-  const playerChar = currentCharacter;
-  const actions = playerChar.actions || [];
+  if (!playerChar) return null;
 
   return (
     <AnimatePresence>
@@ -318,10 +287,10 @@ export function BattleActionBar({
             pt: 1,
             pb: 'env(safe-area-inset-bottom, 12px)',
             background: 'linear-gradient(0deg, rgba(0,0,0,0.6) 0%, rgba(26, 26, 46, 0.95) 100%)',
-            borderColor: 'rgba(245, 158, 11, 0.35)',
+            borderColor: isMyTurn ? 'rgba(245, 158, 11, 0.35)' : 'rgba(255,255,255,0.06)',
           }}
         >
-          {/* Header row: "Your Turn" + AP pips */}
+          {/* Header row */}
           <Box
             sx={{
               display: 'flex',
@@ -331,18 +300,32 @@ export function BattleActionBar({
               px: 0.5,
             }}
           >
-            <Typography
-              sx={{
-                color: 'primary.main',
-                fontSize: '0.65rem',
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: 1.5,
-                textShadow: '0 0 8px rgba(245, 158, 11, 0.4)',
-              }}
-            >
-              Your Turn
-            </Typography>
+            {isMyTurn ? (
+              <Typography
+                sx={{
+                  color: 'primary.main',
+                  fontSize: '0.65rem',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: 1.5,
+                  textShadow: '0 0 8px rgba(245, 158, 11, 0.4)',
+                }}
+              >
+                Your Turn
+              </Typography>
+            ) : (
+              <Typography
+                sx={{
+                  color: 'text.secondary',
+                  fontSize: '0.65rem',
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  letterSpacing: 1,
+                }}
+              >
+                Waiting for {currentCharacter?.name || '...'}
+              </Typography>
+            )}
 
             {/* AP pips */}
             <Box sx={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
@@ -442,7 +425,7 @@ export function BattleActionBar({
             {actions.map((action) => {
               const check = canExecuteAction(playerChar, action);
               const effectiveCost = getEffectiveCost(playerChar, action);
-              const disabled = !check.canExecute || posting;
+              const disabled = !isMyTurn || !check.canExecute || posting;
               const IconComponent = ACTION_ICONS[action.id] || GiScrollUnfurled;
 
               return (

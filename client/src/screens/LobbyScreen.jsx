@@ -46,13 +46,10 @@ export function LobbyScreen({ gameState, myPlayerId, onSelectPlayer, onReleasePl
     }
   }, [players.length]);
 
-  // Poll for updates
-  useEffect(() => {
-    const interval = setInterval(fetchState, 3000);
-    return () => clearInterval(interval);
-  }, [fetchState]);
 
   const handleTakeControl = async (playerId) => {
+    if (myPlayerId || loading) return;
+    setLoading(true);
     try {
       const result = await api.join(playerId);
       if (result.success) {
@@ -63,6 +60,8 @@ export function LobbyScreen({ gameState, myPlayerId, onSelectPlayer, onReleasePl
       }
     } catch (err) {
       setError('Connection failed');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -188,12 +187,14 @@ export function LobbyScreen({ gameState, myPlayerId, onSelectPlayer, onReleasePl
           const ClassIcon = CLASS_ICON_MAP[player.class];
           const portrait = PORTRAITS[player.name.toLowerCase()];
 
+          const canSelect = !myPlayerId && !isMine && !loading;
+
           return (
             <Box
               key={player.id}
               component={motion.div}
-              whileTap={!isMine ? { scale: 0.97 } : undefined}
-              onClick={() => !isMine && handleTakeControl(player.id)}
+              whileTap={canSelect ? { scale: 0.97 } : undefined}
+              onClick={() => canSelect && handleTakeControl(player.id)}
               sx={{
                 display: 'flex',
                 alignItems: 'center',
@@ -204,7 +205,7 @@ export function LobbyScreen({ gameState, myPlayerId, onSelectPlayer, onReleasePl
                 bgcolor: isMine ? 'primary.main' : 'rgba(255,255,255,0.08)',
                 color: isMine ? 'background.default' : 'text.primary',
                 opacity: isControlled && !isMine ? 0.5 : 1,
-                cursor: isMine ? 'default' : 'pointer',
+                cursor: canSelect ? 'pointer' : 'default',
                 transition: 'background 0.2s',
               }}
             >

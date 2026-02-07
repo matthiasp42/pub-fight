@@ -27,11 +27,6 @@ export function LevelUpScreen({ gameState, myPlayer, fetchState }) {
   const deltaSum = Object.values(deltas).reduce((sum, v) => sum + v, 0);
   const attrPointsRemaining = attrPointsAvailable - deltaSum;
 
-  // Poll for state updates
-  useEffect(() => {
-    const interval = setInterval(fetchState, 2000);
-    return () => clearInterval(interval);
-  }, [fetchState]);
 
   const handleIncrement = (attr) => {
     if (attrPointsRemaining <= 0) return;

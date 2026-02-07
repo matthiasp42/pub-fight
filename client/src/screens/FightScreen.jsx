@@ -10,6 +10,7 @@ import { BattleWheel } from '../components/BattleWheel.jsx';
 import { ActionPopover } from '../components/ActionPopover.jsx';
 import { GameLog } from '../components/GameLog.jsx';
 import { SkillTreeDialog } from '../components/SkillTreeDialog.jsx';
+import { EnemyInfoDialog } from '../components/EnemyInfoDialog.jsx';
 import { AdminModal } from '../components/AdminModal.jsx';
 import { buildFightFromServer } from '../game/fightSetup.js';
 import {
@@ -105,12 +106,19 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
   const postToServerRef = useRef(null);
   const bossTurnScheduledRef = useRef(false);
 
+  // Remote animation tracking — lets us replay other players' actions
+  const seenLogLenRef = useRef(0);
+  const isRemoteAnimRef = useRef(false);
+
   // Inline wheel state (new flow)
   const [pendingWheelAction, setPendingWheelAction] = useState(null);
   const [isPlayerAnim, setIsPlayerAnim] = useState(false);
 
   // Manual target selection state (for Precision etc.)
   const [pendingManualAction, setPendingManualAction] = useState(null);
+
+  // Enemy info dialog state
+  const [enemyInfoCharacter, setEnemyInfoCharacter] = useState(null);
 
   const activeDungeonId = gameState?.activeDungeonId;
   const serverFight = gameState?.fightState;
@@ -166,8 +174,12 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
     setHitTargets(new Set());
 
     // Phase 2: Impact - apply damage, show shake + combat text
+    // For remote animations, freeze HP bars — combat text still shows per-action values
+    const isRemote = isRemoteAnimRef.current;
     const t1 = setTimeout(() => {
-      setLocalFight(current.stateAfterAction);
+      if (!isRemote) {
+        setLocalFight(current.stateAfterAction);
+      }
       setShowImpact(true);
       const hitIds = (current.result.targetResults || [])
         .filter(tr => tr.hit !== false)
@@ -180,16 +192,23 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
       setActiveAnim(null);
       setShowImpact(false);
       setHitTargets(new Set());
-      setLocalFight(current.stateAfterTurn);
+      if (!isRemote) {
+        setLocalFight(current.stateAfterTurn);
+      }
 
       animPlayingRef.current = false;
       setAnimQueue(prev => prev.slice(1));
 
-      // If this was the last animation, post final state
+      // If this was the last animation, post or snap final state
       if (isLastInQueue && finalAnimStateRef.current) {
         const finalState = finalAnimStateRef.current;
         finalAnimStateRef.current = null;
-        postToServerRef.current(finalState);
+        if (isRemote) {
+          isRemoteAnimRef.current = false;
+          setLocalFight(finalState);
+        } else {
+          postToServerRef.current(finalState);
+        }
       }
     }, CLEAR_DELAY);
 
@@ -198,7 +217,9 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
 
   // Start an animation sequence for boss turns
   const startBossAnimations = useCallback((startState) => {
+    isRemoteAnimRef.current = false;
     const { actions, finalState } = collectBossTurns(startState);
+    seenLogLenRef.current = finalState.actionLog?.length || 0;
 
     if (actions.length === 0) {
       setLocalFight(finalState);
@@ -220,6 +241,7 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
       try {
         const fight = buildFightFromServer(gameState.players, activeDungeonId, dungeons, serverSkills);
         fight.actionLog = [{ timestamp: Date.now(), type: 'fight_start', description: 'Fight started!' }];
+        seenLogLenRef.current = fight.actionLog.length;
         setLocalFight(fight);
 
         api.postFightState(fight, 0).then(res => {
@@ -234,20 +256,50 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
     }
   }, [activeDungeonId, serverFight, gameState?.players, dungeons, fetchState, serverSkills, skillsLoading]);
 
-  // Sync from server fight state
+  // Sync from server fight state — detect new actions and animate them
   useEffect(() => {
     if (!serverFight) return;
     if (serverFightVersion <= lastFightVersionRef.current) return;
+    // Don't interrupt ongoing animations or wheel spin — next poll will catch up
+    if (animQueue.length > 0 || posting || pendingWheelAction) return;
+
+    // First sync (page load / join mid-fight) — just accept state, don't replay history
+    if (lastFightVersionRef.current === -1) {
+      lastFightVersionRef.current = serverFightVersion;
+      seenLogLenRef.current = serverFight.actionLog?.length || 0;
+      setLocalFight(serverFight);
+      return;
+    }
 
     lastFightVersionRef.current = serverFightVersion;
-    setLocalFight(serverFight);
-  }, [serverFight, serverFightVersion]);
 
-  // Poll for state updates
-  useEffect(() => {
-    const interval = setInterval(fetchState, 2000);
-    return () => clearInterval(interval);
-  }, [fetchState]);
+    // Check for new action log entries to replay as animations
+    const serverLogLen = serverFight.actionLog?.length || 0;
+    const newEntries = (serverFight.actionLog || []).slice(seenLogLenRef.current);
+    const animatable = newEntries.filter(e => e.type === 'action' && e.actionResult);
+
+    seenLogLenRef.current = serverLogLen;
+
+    // Animate remote actions (cap at 6 to avoid long replays on reconnect)
+    if (animatable.length > 0 && animatable.length <= 6) {
+      const remoteAnims = animatable.map(entry => ({
+        actorId: entry.actorId,
+        actorName: entry.actorName,
+        actorType: entry.actorType,
+        actionName: entry.actionName,
+        result: entry.actionResult,
+        stateAfterAction: serverFight,
+        stateAfterTurn: serverFight,
+        isPlayerAction: entry.actorType === CHARACTER_TYPES.PLAYER,
+      }));
+      isRemoteAnimRef.current = true;
+      finalAnimStateRef.current = serverFight;
+      setAnimQueue(remoteAnims);
+    } else {
+      setLocalFight(serverFight);
+    }
+  }, [serverFight, serverFightVersion, animQueue.length, posting, pendingWheelAction]);
+
 
   const fightState = localFight;
   const currentCharacter = fightState ? getCurrentTurnCharacter(fightState) : null;
@@ -256,6 +308,11 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
     currentCharacter?.id === myPlayer?.id;
 
   const isPlayerTurn = currentCharacter?.type === CHARACTER_TYPES.PLAYER;
+
+  // Find my own character in the fight state (for showing skills when it's not my turn)
+  const myCharacter = fightState?.characters?.find(
+    (c) => c.type === CHARACTER_TYPES.PLAYER && c.id === myPlayer?.id
+  ) || null;
 
   // Auto-process boss/minion turns (now animated)
   // IMPORTANT: No state changes before the timer fires — otherwise React
@@ -284,6 +341,8 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
 
   // Feed a player action through the animation queue (same system as boss turns)
   const animatePlayerAction = useCallback((result, stateBefore, newState, actor) => {
+    // Safety: ensure local actions are never treated as remote
+    isRemoteAnimRef.current = false;
     const stateAfterTurn = advanceTurn(newState);
 
     const animAction = {
@@ -308,12 +367,14 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
       const { actions: bossActions, finalState } = collectBossTurns(stateAfterTurn);
       const allActions = [animAction, ...bossActions];
       finalAnimStateRef.current = finalState;
+      seenLogLenRef.current = finalState.actionLog?.length || 0;
       setIsPlayerAnim(true);
       setPosting(true);
       setAnimQueue(allActions);
     } else {
       // Just the player action, then post
       finalAnimStateRef.current = stateAfterTurn;
+      seenLogLenRef.current = stateAfterTurn.actionLog?.length || 0;
       setIsPlayerAnim(true);
       setPosting(true);
       setAnimQueue([animAction]);
@@ -474,6 +535,7 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
     try {
       const fight = buildFightFromServer(gameState.players, activeDungeonId, dungeons, serverSkills);
       fight.actionLog = [{ timestamp: Date.now(), type: 'fight_start', description: 'Fight restarted!' }];
+      seenLogLenRef.current = fight.actionLog.length;
       setLocalFight(fight);
 
       const res = await api.postFightState(fight, lastFightVersionRef.current);
@@ -489,6 +551,7 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
       setIsPlayerAnim(false);
       animPlayingRef.current = false;
       bossTurnScheduledRef.current = false;
+      isRemoteAnimRef.current = false;
       animTimersRef.current.forEach(clearTimeout);
     } catch (err) {
       console.error('Failed to restart fight:', err);
@@ -566,7 +629,6 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
   const players = fightState.characters.filter(
     c => c.type === CHARACTER_TYPES.PLAYER
   );
-  const myCharacter = players.find(p => p.id === myPlayer?.id);
 
   // During animations, disable player actions
   const isAnimating = animQueue.length > 0 || activeAnim !== null || pendingWheelAction !== null;
@@ -670,7 +732,7 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
                     size={enemy.type === CHARACTER_TYPES.BOSS ? 'boss' : 'normal'}
                     isBeingHit={hitTargets.has(enemy.id)}
                     isTargetable={!!pendingManualAction && enemy.state.isAlive}
-                    onClick={pendingManualAction && enemy.state.isAlive ? () => handleTargetSelect(enemy.id) : undefined}
+                    onClick={pendingManualAction && enemy.state.isAlive ? () => handleTargetSelect(enemy.id) : () => setEnemyInfoCharacter(enemy)}
                   />
                 ));
               })()}
@@ -784,6 +846,7 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
         <BattleActionBar
           isMyTurn={isMyTurn && !isAnimating}
           currentCharacter={currentCharacter}
+          myCharacter={myCharacter}
           myPlayer={myPlayer}
           fightOver={fightState.isOver}
           fightResult={fightState.result}
@@ -840,6 +903,13 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
           readOnly
         />
       )}
+
+      {/* Enemy Info Dialog */}
+      <EnemyInfoDialog
+        open={!!enemyInfoCharacter}
+        onClose={() => setEnemyInfoCharacter(null)}
+        character={enemyInfoCharacter}
+      />
 
       {showAdmin && (
         <AdminModal

@@ -1,7 +1,7 @@
 {
   "minions": {
     "bar_regular": {
-      "name": "Bar Regular",
+      "name": "Mottenburg Moth",
       "attributes": {
         "maxHealth": 4,
         "maxAP": 2,
@@ -13,7 +13,7 @@
       }
     },
     "corner_man": {
-      "name": "Corner Man",
+      "name": "Still Hand",
       "attributes": {
         "maxHealth": 5,
         "maxAP": 2,
@@ -25,7 +25,7 @@
       }
     },
     "powder_monkey": {
-      "name": "Powder Monkey",
+      "name": "Honey Bee",
       "attributes": {
         "maxHealth": 4,
         "maxAP": 2,
@@ -37,7 +37,7 @@
       }
     },
     "echo": {
-      "name": "Echo",
+      "name": "Kurio",
       "attributes": {
         "maxHealth": 5,
         "maxAP": 2,
@@ -49,7 +49,7 @@
       }
     },
     "restless_spirit": {
-      "name": "Restless Spirit",
+      "name": "Loyal Comrade",
       "attributes": {
         "maxHealth": 5,
         "maxAP": 2,
@@ -61,7 +61,7 @@
       }
     },
     "last_call_patron": {
-      "name": "Last Call Patron",
+      "name": "Extrakt Dregs",
       "attributes": {
         "maxHealth": 7,
         "maxAP": 2,
@@ -76,7 +76,7 @@
   "bosses": [
     {
       "id": "molly_the_matron",
-      "name": "Molly the Matron",
+      "name": "Motte the Matron",
       "level": 1,
       "archetype": "swarmMaster",
       "minionId": "bar_regular",
@@ -92,7 +92,7 @@
       "abilities": [
         {
           "id": "bar_tab_beatdown",
-          "name": "Bar Tab Beatdown",
+          "name": "Moth-Eaten Mauling",
           "cost": 1,
           "targetType": "random",
           "hits": 1,
@@ -106,7 +106,7 @@
         },
         {
           "id": "rallying_call",
-          "name": "Rallying Call",
+          "name": "Swarm Call",
           "cost": 2,
           "targetType": "self",
           "hits": 1,
@@ -122,7 +122,7 @@
         },
         {
           "id": "rowdy_round",
-          "name": "Rowdy Round",
+          "name": "Fortress Frenzy",
           "cost": 2,
           "targetType": "allParty",
           "hits": 1,
@@ -138,7 +138,7 @@
     },
     {
       "id": "iron_knuckles_mcgee",
-      "name": "Iron Knuckles McGee",
+      "name": "The Destiller",
       "level": 2,
       "archetype": "executioner",
       "minionId": "corner_man",
@@ -154,7 +154,7 @@
       "abilities": [
         {
           "id": "haymaker",
-          "name": "Haymaker",
+          "name": "Hundred Proof Hook",
           "cost": 2,
           "targetType": "random",
           "hits": 1,
@@ -168,7 +168,7 @@
         },
         {
           "id": "jab",
-          "name": "Jab",
+          "name": "Quick Nip",
           "cost": 1,
           "targetType": "random",
           "hits": 1,
@@ -182,7 +182,7 @@
         },
         {
           "id": "knockout_punch",
-          "name": "Knockout Punch",
+          "name": "Overproof Uppercut",
           "cost": 3,
           "targetType": "random",
           "hits": 1,
@@ -197,7 +197,7 @@
         },
         {
           "id": "roundhouse",
-          "name": "Roundhouse",
+          "name": "Barrel Roll",
           "cost": 2,
           "targetType": "allParty",
           "hits": 1,
@@ -211,7 +211,7 @@
         },
         {
           "id": "tag_team",
-          "name": "Tag Team",
+          "name": "Double Distilled",
           "cost": 1,
           "targetType": "self",
           "hits": 1,
@@ -229,7 +229,7 @@
     },
     {
       "id": "blast_barrel_betty",
-      "name": "Blast Barrel Betty",
+      "name": "Honey B. Betty",
       "level": 3,
       "archetype": "devastator",
       "minionId": "powder_monkey",
@@ -245,7 +245,7 @@
       "abilities": [
         {
           "id": "explosive_round",
-          "name": "Explosive Round",
+          "name": "Sticky Bomb",
           "cost": 2,
           "targetType": "allParty",
           "hits": 1,
@@ -259,7 +259,7 @@
         },
         {
           "id": "barrel_toss",
-          "name": "Barrel Toss",
+          "name": "Honey Jar Hurl",
           "cost": 3,
           "targetType": "allParty",
           "hits": 1,
@@ -273,7 +273,7 @@
         },
         {
           "id": "fuse_lit",
-          "name": "Fuse Lit",
+          "name": "Sugar Rush",
           "cost": 1,
           "targetType": "self",
           "hits": 1,
@@ -287,7 +287,7 @@
         },
         {
           "id": "cellar_surprise",
-          "name": "Cellar Surprise",
+          "name": "Hive Mind",
           "cost": 4,
           "targetType": "allParty",
           "hits": 1,
@@ -301,7 +301,7 @@
         },
         {
           "id": "powder_keg_shield",
-          "name": "Powder Keg Shield",
+          "name": "Beeswax Barrier",
           "cost": 1,
           "targetType": "self",
           "hits": 1,
@@ -315,7 +315,7 @@
         },
         {
           "id": "light_the_fuse",
-          "name": "Light the Fuse",
+          "name": "Release the Swarm",
           "cost": 1,
           "targetType": "self",
           "hits": 1,
@@ -333,7 +333,7 @@
     },
     {
       "id": "pickled_pete",
-      "name": "Pickled Pete",
+      "name": "Klein Kröpcke Pete",
       "level": 4,
       "archetype": "tankBuster",
       "attributes": {
@@ -348,7 +348,7 @@
       "abilities": [
         {
           "id": "acid_spit",
-          "name": "Acid Spit",
+          "name": "Kröpcke Spit",
           "cost": 2,
           "targetType": "random",
           "hits": 1,
@@ -363,7 +363,7 @@
         },
         {
           "id": "corrosive_splash",
-          "name": "Corrosive Splash",
+          "name": "Klein Splash",
           "cost": 3,
           "targetType": "allParty",
           "hits": 1,
@@ -378,7 +378,7 @@
         },
         {
           "id": "dissolving_touch",
-          "name": "Dissolving Touch",
+          "name": "Shrinking Touch",
           "cost": 1,
           "targetType": "random",
           "hits": 1,
@@ -392,7 +392,7 @@
         },
         {
           "id": "toxic_fortitude",
-          "name": "Toxic Fortitude",
+          "name": "Klein but Deadly",
           "cost": 2,
           "targetType": "self",
           "hits": 1,
@@ -410,7 +410,7 @@
         },
         {
           "id": "pickled_rage",
-          "name": "Pickled Rage",
+          "name": "Kröpcke Fury",
           "cost": 3,
           "targetType": "random",
           "hits": 3,
@@ -427,7 +427,7 @@
     },
     {
       "id": "jukebox_jinx",
-      "name": "The Jukebox Jinx",
+      "name": "The Kurious Jinx",
       "level": 5,
       "archetype": "tempoManipulator",
       "minionId": "echo",
@@ -443,7 +443,7 @@
       "abilities": [
         {
           "id": "tempo_drain",
-          "name": "Tempo Drain",
+          "name": "Curiosity Drain",
           "cost": 2,
           "targetType": "random",
           "hits": 1,
@@ -461,7 +461,7 @@
         },
         {
           "id": "discordant_chord",
-          "name": "Discordant Chord",
+          "name": "Discordant Discovery",
           "cost": 3,
           "targetType": "allParty",
           "hits": 1,
@@ -479,7 +479,7 @@
         },
         {
           "id": "encore",
-          "name": "Encore!",
+          "name": "Another Exhibit!",
           "cost": 1,
           "targetType": "self",
           "hits": 1,
@@ -493,7 +493,7 @@
         },
         {
           "id": "vinyl_slash",
-          "name": "Vinyl Slash",
+          "name": "Exhibit Slash",
           "cost": 1,
           "targetType": "random",
           "hits": 2,
@@ -507,7 +507,7 @@
         },
         {
           "id": "bass_drop",
-          "name": "Bass Drop",
+          "name": "Cabinet Drop",
           "cost": 4,
           "targetType": "allParty",
           "hits": 1,
@@ -525,7 +525,7 @@
         },
         {
           "id": "opening_act",
-          "name": "Opening Act",
+          "name": "New Exhibit",
           "cost": 1,
           "targetType": "self",
           "hits": 1,
@@ -543,7 +543,7 @@
     },
     {
       "id": "old_nan_nightmare",
-      "name": "Old Nan the Nightmare",
+      "name": "Supreme Nan of Pjöng",
       "level": 6,
       "archetype": "regenerator",
       "minionId": "restless_spirit",
@@ -559,7 +559,7 @@
       "abilities": [
         {
           "id": "drain_life",
-          "name": "Drain Life",
+          "name": "Pint Drain",
           "cost": 2,
           "targetType": "random",
           "hits": 1,
@@ -579,7 +579,7 @@
         },
         {
           "id": "spirit_siphon",
-          "name": "Spirit Siphon",
+          "name": "Propaganda Siphon",
           "cost": 3,
           "targetType": "allParty",
           "hits": 1,
@@ -599,7 +599,7 @@
         },
         {
           "id": "eternal_rest",
-          "name": "Eternal Rest",
+          "name": "Eternal Pinte",
           "cost": 2,
           "targetType": "self",
           "hits": 1,
@@ -613,7 +613,7 @@
         },
         {
           "id": "vengeful_spirits",
-          "name": "Vengeful Spirits",
+          "name": "Vengeful Comrades",
           "cost": 3,
           "targetType": "random",
           "hits": 3,
@@ -627,7 +627,7 @@
         },
         {
           "id": "nightmare_fuel",
-          "name": "Nightmare Fuel",
+          "name": "Pjöng's Wrath",
           "cost": 3,
           "targetType": "allParty",
           "hits": 1,
@@ -647,7 +647,7 @@
         },
         {
           "id": "raise_dead",
-          "name": "Raise Dead",
+          "name": "Conscript the Fallen",
           "cost": 1,
           "targetType": "self",
           "hits": 1,
@@ -665,7 +665,7 @@
     },
     {
       "id": "the_last_call",
-      "name": "The Last Call",
+      "name": "The Final Extrakt",
       "level": 7,
       "archetype": "hybridNightmare",
       "minionId": "last_call_patron",
@@ -681,7 +681,7 @@
       "abilities": [
         {
           "id": "closing_time",
-          "name": "Closing Time",
+          "name": "Extraction Time",
           "cost": 2,
           "targetType": "random",
           "hits": 1,
@@ -695,7 +695,7 @@
         },
         {
           "id": "bar_brawl",
-          "name": "Bar Brawl",
+          "name": "Concentrated Chaos",
           "cost": 3,
           "targetType": "allParty",
           "hits": 1,
@@ -709,7 +709,7 @@
         },
         {
           "id": "last_orders",
-          "name": "Last Orders",
+          "name": "Last Extraction",
           "cost": 1,
           "targetType": "self",
           "hits": 1,
@@ -725,7 +725,7 @@
         },
         {
           "id": "landlords_decree",
-          "name": "Landlord's Decree",
+          "name": "Extraktör's Decree",
           "cost": 2,
           "targetType": "random",
           "hits": 1,
@@ -744,7 +744,7 @@
         },
         {
           "id": "spirit_surge",
-          "name": "Spirit Surge",
+          "name": "Essence Surge",
           "cost": 3,
           "targetType": "self",
           "hits": 1,
@@ -762,7 +762,7 @@
         },
         {
           "id": "happy_hour",
-          "name": "Happy Hour",
+          "name": "Distillation Hour",
           "cost": 1,
           "targetType": "self",
           "hits": 1,
@@ -776,7 +776,7 @@
         },
         {
           "id": "final_bell",
-          "name": "Final Bell",
+          "name": "Final Extraction",
           "cost": 5,
           "targetType": "allParty",
           "hits": 1,

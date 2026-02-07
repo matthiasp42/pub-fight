@@ -103,9 +103,8 @@ export function BattleCharacter({
             fontSize: size === 'boss' ? '0.75rem' : '0.65rem',
             textAlign: 'center',
             maxWidth: barWidth + 20,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
+            wordBreak: 'break-word',
+            lineHeight: 1.2,
             mb: 0.5,
             textShadow: '0 1px 4px rgba(0,0,0,0.8)',
           }}

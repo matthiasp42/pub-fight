@@ -3,6 +3,9 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { api } from '../api/client';
 import { haversineDistance, hasGpsCoords } from '../utils/geo';
+import { SkillTreeDialog } from '../components/SkillTreeDialog';
+import { GiShield, GiSwordWound, GiWizardStaff, GiCauldron } from 'react-icons/gi';
+import { LuX } from 'react-icons/lu';
 
 const ARCHETYPE_LABELS = {
   swarmMaster: 'Swarm Master',
@@ -12,6 +15,19 @@ const ARCHETYPE_LABELS = {
   tempoManipulator: 'Tempo Manipulator',
   regenerator: 'Regenerator',
   hybridNightmare: 'Hybrid Nightmare',
+};
+
+const CLASS_ICON_MAP = { tank: GiShield, warrior: GiSwordWound, wizard: GiWizardStaff, alchemist: GiCauldron };
+const PORTRAITS = { ehsan: '/portraits/ehsan.png', dennis: '/portraits/dennis.png', budde: '/portraits/budde.png', matthias: '/portraits/matthias.png' };
+
+const ATTR_LABELS = {
+  maxHealth: { name: 'Health', icon: '\u2764', color: '#10b981' },
+  maxAP: { name: 'AP', icon: '\u26A1', color: '#3b82f6' },
+  power: { name: 'Power', icon: '\uD83D\uDCAA', color: '#f59e0b' },
+  shieldCapacity: { name: 'Shield Cap', icon: '\uD83D\uDEE1', color: '#a8a095' },
+  shieldStrength: { name: 'Shield Str', icon: '\uD83D\uDEE1', color: '#a8a095' },
+  dexterity: { name: 'Dexterity', icon: '\uD83C\uDFAF', color: '#f59e0b' },
+  evasiveness: { name: 'Evasion', icon: '\uD83D\uDCA8', color: '#3b82f6' },
 };
 
 function makeMarkerSVG(level, isCleared, isEnterable) {
@@ -43,7 +59,6 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
   const map = useRef(null);
   const markersRef = useRef({});
   const playerMarkerRef = useRef(null);
-  const popupRef = useRef(null);
   const bossesRef = useRef(null);
 
   const [position, setPosition] = useState(null);
@@ -51,6 +66,10 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
   const [entering, setEntering] = useState(null);
   const [error, setError] = useState('');
   const [mapReady, setMapReady] = useState(false);
+  const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const [skillTreePlayer, setSkillTreePlayer] = useState(null);
+  const [selectedDungeon, setSelectedDungeon] = useState(null);
+  const skillsRef = useRef(null);
 
   const dungeons = gameState?.dungeons || [];
   const clearedDungeons = gameState?.clearedDungeons || [];
@@ -67,6 +86,14 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
     fetch('/api/bosses').then(r => r.json()).then(data => {
       bossesRef.current = {};
       data.forEach(b => { bossesRef.current[b.id] = b; });
+    }).catch(() => {});
+  }, []);
+
+  // Fetch skill definitions once
+  useEffect(() => {
+    api.getSkills().then(data => {
+      skillsRef.current = {};
+      data.forEach(s => { skillsRef.current[s.id] = s; });
     }).catch(() => {});
   }, []);
 
@@ -130,25 +157,16 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
         markersRef.current[dungeon.id] = { marker, el };
         existing = markersRef.current[dungeon.id];
 
-        const showPopup = () => {
-          popupRef.current?.remove();
-          const popup = new mapboxgl.Popup({ offset: 25, closeButton: true, maxWidth: '260px', className: 'dungeon-popup' })
-            .setLngLat([dungeon.lng, dungeon.lat])
-            .setDOMContent(buildPopupContent(dungeon))
-            .addTo(map.current);
-          popupRef.current = popup;
-        };
-
         // Desktop
         el.addEventListener('click', (e) => {
           e.stopPropagation();
-          showPopup();
+          setSelectedDungeon(dungeon);
         });
         // Mobile: touchend is more reliable than click (small finger movement cancels click)
         el.addEventListener('touchend', (e) => {
           e.stopPropagation();
-          e.preventDefault(); // prevent subsequent click from double-firing
-          showPopup();
+          e.preventDefault();
+          setSelectedDungeon(dungeon);
         });
       } else {
         existing.el.innerHTML = makeMarkerSVG(dungeon.level, isCleared, enterable);
@@ -181,83 +199,6 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
     });
   }, [mapReady, dungeons, clearedDungeons, position, gpsEnabled]);
 
-  function buildPopupContent(dungeon) {
-    const pos = positionRef.current;
-    const cleared = clearedRef.current;
-    const isCleared = cleared.includes(dungeon.id);
-    const dist = pos && gpsEnabled
-      ? haversineDistance(pos.lat, pos.lng, dungeon.lat, dungeon.lng)
-      : null;
-    const enterable = !isCleared && (!gpsEnabled || dist === null || dist <= dungeon.radiusMeters);
-    const boss = bossesRef.current?.[dungeon.bossId];
-
-    const c = document.createElement('div');
-    c.style.cssText = 'font-family:Georgia,serif;color:#3a2a1a;min-width:200px;';
-
-    // Header with dungeon name
-    const header = document.createElement('div');
-    header.style.cssText = 'border-bottom:2px solid #c9a84c;padding-bottom:6px;margin-bottom:8px;';
-    header.innerHTML = `
-      <div style="font-size:0.75em;color:#8b6914;text-transform:uppercase;letter-spacing:1px;">Level ${dungeon.level} Dungeon</div>
-      <div style="font-size:1.15em;font-weight:bold;margin-top:2px;">${dungeon.name}</div>
-      ${isCleared ? '<div style="color:#4a6b3e;font-size:0.85em;font-style:italic;">Conquered!</div>' : ''}
-    `;
-    c.appendChild(header);
-
-    // Boss info
-    if (boss && !isCleared) {
-      const bossSection = document.createElement('div');
-      bossSection.style.cssText = 'background:#f5ead0;border:1px solid #d4c4a0;border-radius:4px;padding:8px;margin-bottom:8px;';
-
-      const archLabel = ARCHETYPE_LABELS[boss.archetype] || boss.archetype;
-      const topAbilities = boss.abilities.slice(0, 3).map(a => a.name).join(', ');
-
-      bossSection.innerHTML = `
-        <div style="font-size:0.7em;color:#8b6914;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Boss</div>
-        <div style="font-weight:bold;font-size:1em;">${boss.name}</div>
-        <div style="font-size:0.8em;color:#6b5030;font-style:italic;margin:2px 0 4px;">${archLabel}</div>
-        <div style="display:flex;gap:8px;font-size:0.75em;color:#5a4a3a;margin-bottom:4px;">
-          <span title="Health">&#9829; ${boss.attributes.maxHealth}</span>
-          <span title="Power">&#9876; ${boss.attributes.power}</span>
-          <span title="Action Points">&#9733; ${boss.attributes.maxAP} AP</span>
-        </div>
-        <div style="font-size:0.7em;color:#7a6a5a;">${topAbilities}</div>
-      `;
-      c.appendChild(bossSection);
-    }
-
-    // Distance
-    if (dist !== null) {
-      const distEl = document.createElement('div');
-      distEl.style.cssText = 'font-size:0.8em;color:#7a6a5a;font-style:italic;margin-bottom:6px;';
-      distEl.textContent = dist < 1000
-        ? `${Math.round(dist)}m away`
-        : `${(dist / 1000).toFixed(1)}km away`;
-      c.appendChild(distEl);
-    }
-
-    // Enter button
-    if (!isCleared) {
-      const btn = document.createElement('button');
-      btn.textContent = enterable ? 'Enter Dungeon' : 'Too far';
-      btn.disabled = !enterable;
-      btn.style.cssText = `
-        padding:8px 14px;font-size:0.9rem;border-radius:4px;width:100%;
-        background:${enterable ? '#8b1a1a' : '#999'};
-        color:${enterable ? '#f0e6d0' : '#ccc'};font-weight:bold;
-        border:${enterable ? '2px solid #5c0e0e' : '2px solid #777'};
-        cursor:${enterable ? 'pointer' : 'not-allowed'};
-        opacity:${enterable ? 1 : 0.5};font-family:Georgia,serif;
-        letter-spacing:0.5px;
-      `;
-      if (enterable) {
-        btn.addEventListener('click', () => handleEnterDungeon(dungeon.id));
-      }
-      c.appendChild(btn);
-    }
-
-    return c;
-  }
 
   // Player position marker
   useEffect(() => {
@@ -298,11 +239,6 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
     return () => navigator.geolocation.clearWatch(watchId);
   }, [gpsEnabled]);
 
-  // Poll state
-  useEffect(() => {
-    const interval = setInterval(fetchState, 3000);
-    return () => clearInterval(interval);
-  }, [fetchState]);
 
   const handleEnterDungeon = useCallback(async (dungeonId) => {
     setEntering(dungeonId);
@@ -310,7 +246,7 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
     try {
       const result = await api.enterDungeon(dungeonId);
       if (result.success) {
-        popupRef.current?.remove();
+        setSelectedDungeon(null);
         fetchState();
       } else {
         setError(result.error || 'Failed to enter dungeon');
@@ -331,6 +267,17 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
   };
 
   const sortedDungeons = [...dungeons].sort((a, b) => a.level - b.level);
+  const players = gameState?.players ? Object.values(gameState.players) : [];
+
+  // Keep selectedPlayer in sync with latest gameState
+  const liveSelectedPlayer = selectedPlayer
+    ? gameState?.players?.[selectedPlayer.id] ?? selectedPlayer
+    : null;
+
+  // Resolve owned skill names for selected player
+  const selectedPlayerSkills = liveSelectedPlayer?.ownedSkillIds
+    ?.map(id => skillsRef.current?.[id])
+    .filter(Boolean) || [];
 
   return (
     <div style={styles.container}>
@@ -345,6 +292,34 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
           </span>
         </div>
       </div>
+
+      {/* Player bar */}
+      {players.length > 0 && (
+        <div style={styles.playerBar}>
+          {players.map(player => {
+            const portrait = PORTRAITS[player.name.toLowerCase()];
+            const ClassIcon = CLASS_ICON_MAP[player.class];
+            const isMe = player.id === myPlayer?.id;
+            return (
+              <button
+                key={player.id}
+                style={{
+                  ...styles.playerAvatar,
+                  ...(isMe ? styles.playerAvatarMine : {}),
+                  ...(portrait ? {
+                    backgroundImage: `url(${portrait})`,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
+                  } : {}),
+                }}
+                onClick={() => setSelectedPlayer(player)}
+              >
+                {!portrait && ClassIcon && <ClassIcon size={18} color="#f5f0e8" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {gpsEnabled && gpsError && (
         <div style={styles.gpsNotice}>GPS: {gpsError}</div>
@@ -396,6 +371,179 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
         </>
       )}
 
+      {/* Dungeon detail modal */}
+      {selectedDungeon && (() => {
+        const dungeon = selectedDungeon;
+        const isCleared = clearedDungeons.includes(dungeon.id);
+        const dist = position && gpsEnabled
+          ? haversineDistance(position.lat, position.lng, dungeon.lat, dungeon.lng)
+          : null;
+        const enterable = !isCleared && (!gpsEnabled || dist === null || dist <= dungeon.radiusMeters);
+        const boss = bossesRef.current?.[dungeon.bossId];
+        const archLabel = boss ? (ARCHETYPE_LABELS[boss.archetype] || boss.archetype) : '';
+        const topAbilities = boss ? boss.abilities.slice(0, 3).map(a => a.name).join(', ') : '';
+
+        return (
+          <div style={styles.overlay} onClick={() => setSelectedDungeon(null)}>
+            <div style={styles.dungeonModal} onClick={e => e.stopPropagation()}>
+              <button style={styles.closeBtn} onClick={() => setSelectedDungeon(null)}>
+                <LuX size={18} />
+              </button>
+
+              {/* Header */}
+              <div style={styles.dungeonModalHeader}>
+                <div style={styles.dungeonModalLabel}>Level {dungeon.level} Dungeon</div>
+                <div style={styles.dungeonModalName}>{dungeon.name}</div>
+                {isCleared && <div style={styles.dungeonModalConquered}>Conquered!</div>}
+              </div>
+
+              {/* Boss info */}
+              {boss && !isCleared && (
+                <div style={styles.dungeonModalBoss}>
+                  <div style={styles.dungeonModalBossLabel}>Boss</div>
+                  <div style={styles.dungeonModalBossName}>{boss.name}</div>
+                  <div style={styles.dungeonModalArchetype}>{archLabel}</div>
+                  <div style={styles.dungeonModalStats}>
+                    <span style={{ color: '#10b981' }}>{'\u2665'} {boss.attributes.maxHealth}</span>
+                    <span style={{ color: '#f59e0b' }}>{'\u2694'} {boss.attributes.power}</span>
+                    <span style={{ color: '#3b82f6' }}>{'\u2605'} {boss.attributes.maxAP} AP</span>
+                  </div>
+                  <div style={styles.dungeonModalAbilities}>{topAbilities}</div>
+                </div>
+              )}
+
+              {/* Distance */}
+              {dist !== null && (
+                <div style={styles.dungeonModalDist}>
+                  {dist < 1000 ? `${Math.round(dist)}m away` : `${(dist / 1000).toFixed(1)}km away`}
+                </div>
+              )}
+
+              {/* Enter buttons */}
+              {!isCleared && (
+                <div style={styles.dungeonModalButtons}>
+                  <button
+                    style={{
+                      ...styles.dungeonModalEnter,
+                      ...(enterable ? {} : styles.dungeonModalEnterDisabled),
+                    }}
+                    disabled={!enterable}
+                    onClick={() => enterable && handleEnterDungeon(dungeon.id)}
+                  >
+                    Enter Dungeon
+                  </button>
+                  {!enterable && gpsEnabled && dist !== null && (
+                    <button
+                      style={styles.dungeonModalIgnore}
+                      onClick={() => handleEnterDungeon(dungeon.id)}
+                    >
+                      Ignore distance
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Player detail overlay */}
+      {liveSelectedPlayer && (
+        <div style={styles.overlay} onClick={() => setSelectedPlayer(null)}>
+          <div style={styles.playerDetail} onClick={e => e.stopPropagation()}>
+            {/* Close button */}
+            <button style={styles.closeBtn} onClick={() => setSelectedPlayer(null)}>
+              <LuX size={18} />
+            </button>
+
+            {/* Player header */}
+            <div style={styles.detailHeader}>
+              {(() => {
+                const portrait = PORTRAITS[liveSelectedPlayer.name.toLowerCase()];
+                const ClassIcon = CLASS_ICON_MAP[liveSelectedPlayer.class];
+                return (
+                  <div style={{
+                    ...styles.detailAvatar,
+                    ...(portrait ? {
+                      backgroundImage: `url(${portrait})`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center',
+                    } : {}),
+                  }}>
+                    {!portrait && ClassIcon && <ClassIcon size={24} color="#f5f0e8" />}
+                  </div>
+                );
+              })()}
+              <div>
+                <div style={styles.detailName}>{liveSelectedPlayer.name}</div>
+                <div style={styles.detailClass}>
+                  {liveSelectedPlayer.class} &middot; Lv.{liveSelectedPlayer.level}
+                </div>
+              </div>
+            </div>
+
+            {/* Attributes */}
+            <div style={styles.detailSection}>
+              <div style={styles.detailSectionLabel}>Attributes</div>
+              <div style={styles.attrGrid}>
+                {Object.entries(ATTR_LABELS).map(([key, { name, icon, color }]) => (
+                  <div key={key} style={styles.attrItem}>
+                    <span style={{ ...styles.attrIcon, color }}>{icon}</span>
+                    <span style={styles.attrName}>{name}</span>
+                    <span style={styles.attrVal}>{liveSelectedPlayer.attributes?.[key] ?? 0}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Owned skills */}
+            <div style={styles.detailSection}>
+              <div style={styles.detailSectionLabel}>
+                Skills ({selectedPlayerSkills.length})
+              </div>
+              {selectedPlayerSkills.length === 0 ? (
+                <div style={styles.noSkills}>No skills unlocked yet</div>
+              ) : (
+                <div style={styles.skillList}>
+                  {selectedPlayerSkills.map(skill => (
+                    <div key={skill.id} style={styles.skillItem}>
+                      <span style={{
+                        ...styles.skillDot,
+                        background: skill.type === 'ability' ? '#f59e0b' : '#a855f6',
+                      }} />
+                      <div style={styles.skillInfo}>
+                        <span style={styles.skillName}>{skill.name}</span>
+                        <span style={styles.skillDesc}>{skill.description}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* View Skill Tree button */}
+            <button
+              style={styles.skillTreeBtn}
+              onClick={() => setSkillTreePlayer(liveSelectedPlayer)}
+            >
+              View Skill Tree
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Skill Tree Dialog (read-only) */}
+      {skillTreePlayer && (
+        <SkillTreeDialog
+          open={true}
+          onClose={() => setSkillTreePlayer(null)}
+          characterClass={skillTreePlayer.class}
+          characterLevel={skillTreePlayer.level}
+          ownedSkillIds={skillTreePlayer.ownedSkillIds || []}
+          perkPoints={0}
+          readOnly
+        />
+      )}
     </div>
   );
 }
@@ -500,4 +648,306 @@ const styles = {
     color: '#fff', fontWeight: 'bold', border: 'none', cursor: 'pointer',
   },
   enterDisabled: { opacity: 0.3, cursor: 'not-allowed' },
+
+  // Player bar
+  playerBar: {
+    display: 'flex',
+    gap: '8px',
+    width: '100%',
+    marginBottom: '8px',
+    zIndex: 1,
+    justifyContent: 'center',
+  },
+  playerAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: '50%',
+    border: '2px solid rgba(168,160,149,0.3)',
+    background: 'rgba(255,255,255,0.08)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    flexShrink: 0,
+    padding: 0,
+  },
+  playerAvatarMine: {
+    borderColor: '#f59e0b',
+    boxShadow: '0 0 0 2px rgba(245,158,11,0.3)',
+  },
+
+  // Player detail overlay
+  overlay: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(0,0,0,0.6)',
+    zIndex: 1000,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '16px',
+  },
+
+  // Dungeon modal
+  dungeonModal: {
+    background: '#2d2418',
+    borderRadius: '16px',
+    border: '2px solid rgba(245,158,11,0.3)',
+    padding: '16px',
+    width: '100%',
+    maxWidth: 320,
+    position: 'relative',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+    fontFamily: 'Georgia, serif',
+  },
+  dungeonModalHeader: {
+    borderBottom: '2px solid rgba(245,158,11,0.4)',
+    paddingBottom: '6px',
+    marginBottom: '10px',
+  },
+  dungeonModalLabel: {
+    fontSize: '0.75rem',
+    color: '#f59e0b',
+    textTransform: 'uppercase',
+    letterSpacing: '1px',
+  },
+  dungeonModalName: {
+    fontSize: '1.15rem',
+    fontWeight: 'bold',
+    marginTop: '2px',
+    color: '#f5f0e8',
+  },
+  dungeonModalConquered: {
+    color: '#10b981',
+    fontSize: '0.85rem',
+    fontStyle: 'italic',
+  },
+  dungeonModalBoss: {
+    background: 'rgba(220,38,38,0.1)',
+    border: '1px solid rgba(220,38,38,0.25)',
+    borderRadius: '8px',
+    padding: '10px',
+    marginBottom: '10px',
+  },
+  dungeonModalBossLabel: {
+    fontSize: '0.7rem',
+    color: '#f59e0b',
+    textTransform: 'uppercase',
+    letterSpacing: '1px',
+    marginBottom: '3px',
+  },
+  dungeonModalBossName: {
+    fontWeight: 'bold',
+    fontSize: '1rem',
+    color: '#f5f0e8',
+  },
+  dungeonModalArchetype: {
+    fontSize: '0.8rem',
+    color: '#a8a095',
+    fontStyle: 'italic',
+    margin: '2px 0 6px',
+  },
+  dungeonModalStats: {
+    display: 'flex',
+    gap: '10px',
+    fontSize: '0.8rem',
+    marginBottom: '6px',
+  },
+  dungeonModalAbilities: {
+    fontSize: '0.75rem',
+    color: '#a8a095',
+  },
+  dungeonModalDist: {
+    fontSize: '0.8rem',
+    color: '#a8a095',
+    fontStyle: 'italic',
+    marginBottom: '8px',
+  },
+  dungeonModalButtons: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  dungeonModalEnter: {
+    padding: '10px 14px',
+    fontSize: '0.95rem',
+    borderRadius: '8px',
+    width: '100%',
+    background: '#dc2626',
+    color: '#f5f0e8',
+    fontWeight: 'bold',
+    border: '2px solid rgba(220,38,38,0.6)',
+    cursor: 'pointer',
+    fontFamily: 'Georgia, serif',
+    letterSpacing: '0.5px',
+    minHeight: '48px',
+  },
+  dungeonModalEnterDisabled: {
+    background: 'rgba(168,160,149,0.2)',
+    color: '#a8a095',
+    border: '2px solid rgba(168,160,149,0.2)',
+    cursor: 'not-allowed',
+    opacity: 0.5,
+  },
+  dungeonModalIgnore: {
+    padding: '8px 14px',
+    fontSize: '0.8rem',
+    borderRadius: '8px',
+    width: '100%',
+    background: 'transparent',
+    color: '#a8a095',
+    fontWeight: 'normal',
+    border: '1px solid rgba(168,160,149,0.25)',
+    cursor: 'pointer',
+    fontFamily: 'Georgia, serif',
+    minHeight: '48px',
+  },
+
+  playerDetail: {
+    background: '#2d2418',
+    borderRadius: '16px',
+    border: '2px solid rgba(245,158,11,0.3)',
+    padding: '16px',
+    width: '100%',
+    maxWidth: 360,
+    maxHeight: '80vh',
+    overflowY: 'auto',
+    position: 'relative',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+  },
+  closeBtn: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    background: 'transparent',
+    border: 'none',
+    color: '#a8a095',
+    cursor: 'pointer',
+    padding: 4,
+    display: 'flex',
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '14px',
+  },
+  detailAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: '50%',
+    border: '2px solid rgba(245,158,11,0.4)',
+    background: 'rgba(255,255,255,0.08)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  detailName: {
+    fontSize: '1.1rem',
+    fontWeight: 'bold',
+    color: '#f5f0e8',
+  },
+  detailClass: {
+    fontSize: '0.8rem',
+    color: '#a8a095',
+    textTransform: 'capitalize',
+  },
+  detailSection: {
+    marginBottom: '12px',
+  },
+  detailSectionLabel: {
+    fontSize: '0.7rem',
+    color: '#f59e0b',
+    textTransform: 'uppercase',
+    letterSpacing: '1px',
+    marginBottom: '8px',
+    fontWeight: 'bold',
+  },
+  attrGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '6px',
+  },
+  attrItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    fontSize: '0.8rem',
+    padding: '4px 8px',
+    borderRadius: '6px',
+    background: 'rgba(255,255,255,0.04)',
+  },
+  attrIcon: {
+    fontSize: '0.85rem',
+    flexShrink: 0,
+  },
+  attrName: {
+    color: '#a8a095',
+    flex: 1,
+    fontSize: '0.75rem',
+  },
+  attrVal: {
+    fontWeight: 'bold',
+    color: '#f5f0e8',
+    fontSize: '0.85rem',
+  },
+  noSkills: {
+    fontSize: '0.8rem',
+    color: '#a8a095',
+    fontStyle: 'italic',
+  },
+  skillList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  skillItem: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '8px',
+    padding: '6px 8px',
+    borderRadius: '6px',
+    background: 'rgba(255,255,255,0.04)',
+  },
+  skillDot: {
+    width: 8,
+    height: 8,
+    borderRadius: '50%',
+    flexShrink: 0,
+    marginTop: 4,
+  },
+  skillInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1px',
+    minWidth: 0,
+  },
+  skillName: {
+    fontSize: '0.8rem',
+    fontWeight: 'bold',
+    color: '#f5f0e8',
+  },
+  skillDesc: {
+    fontSize: '0.7rem',
+    color: '#a8a095',
+    lineHeight: 1.3,
+  },
+  skillTreeBtn: {
+    width: '100%',
+    padding: '10px',
+    fontSize: '0.85rem',
+    borderRadius: '8px',
+    background: 'transparent',
+    color: '#f59e0b',
+    fontWeight: 'bold',
+    border: '1px solid rgba(245,158,11,0.3)',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    minHeight: 44,
+  },
 };
