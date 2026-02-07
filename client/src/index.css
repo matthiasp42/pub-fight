@@ -32,27 +32,3 @@ input {
   font-family: inherit;
   outline: none;
 }
-
-/* Mapbox dungeon popup — dark theme overrides */
-.dungeon-popup .mapboxgl-popup-content {
-  background: #2d2418;
-  color: #f5f0e8;
-  border-radius: 12px;
-  padding: 14px 16px;
-  border: 2px solid rgba(245, 158, 11, 0.3);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-}
-.dungeon-popup .mapboxgl-popup-tip {
-  border-top-color: #2d2418;
-}
-.dungeon-popup .mapboxgl-popup-close-button {
-  color: #a8a095;
-  font-size: 20px;
-  padding: 4px 8px;
-  right: 2px;
-  top: 2px;
-}
-.dungeon-popup .mapboxgl-popup-close-button:hover {
-  color: #f5f0e8;
-  background: transparent;
-}

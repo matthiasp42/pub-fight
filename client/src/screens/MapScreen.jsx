@@ -3,7 +3,7 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { api } from '../api/client';
 import { haversineDistance, hasGpsCoords } from '../utils/geo';
-import { SkillTreeDialog } from '../components/SkillTreeDialog';
+import { PlayerDetailOverlay } from '../components/PlayerDetailOverlay';
 import { GiShield, GiSwordWound, GiWizardStaff, GiCauldron } from 'react-icons/gi';
 import { LuX } from 'react-icons/lu';
 
@@ -19,16 +19,6 @@ const ARCHETYPE_LABELS = {
 
 const CLASS_ICON_MAP = { tank: GiShield, warrior: GiSwordWound, wizard: GiWizardStaff, alchemist: GiCauldron };
 const PORTRAITS = { ehsan: '/portraits/ehsan.png', dennis: '/portraits/dennis.png', budde: '/portraits/budde.png', matthias: '/portraits/matthias.png' };
-
-const ATTR_LABELS = {
-  maxHealth: { name: 'Health', icon: '\u2764', color: '#10b981' },
-  maxAP: { name: 'AP', icon: '\u26A1', color: '#3b82f6' },
-  power: { name: 'Power', icon: '\uD83D\uDCAA', color: '#f59e0b' },
-  shieldCapacity: { name: 'Shield Cap', icon: '\uD83D\uDEE1', color: '#a8a095' },
-  shieldStrength: { name: 'Shield Str', icon: '\uD83D\uDEE1', color: '#a8a095' },
-  dexterity: { name: 'Dexterity', icon: '\uD83C\uDFAF', color: '#f59e0b' },
-  evasiveness: { name: 'Evasion', icon: '\uD83D\uDCA8', color: '#3b82f6' },
-};
 
 function makeMarkerSVG(level, isCleared, isEnterable) {
   const fill = isCleared ? '#4a6b3e' : isEnterable ? '#8b1a1a' : '#5a5244';
@@ -67,18 +57,11 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
   const [error, setError] = useState('');
   const [mapReady, setMapReady] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState(null);
-  const [skillTreePlayer, setSkillTreePlayer] = useState(null);
   const [selectedDungeon, setSelectedDungeon] = useState(null);
-  const skillsRef = useRef(null);
 
   const dungeons = gameState?.dungeons || [];
   const clearedDungeons = gameState?.clearedDungeons || [];
 
-  // Refs for values needed by Mapbox popup closures (avoids stale closures)
-  const positionRef = useRef(position);
-  positionRef.current = position;
-  const clearedRef = useRef(clearedDungeons);
-  clearedRef.current = clearedDungeons;
   const gpsEnabled = hasGpsCoords(dungeons);
 
   // Fetch boss definitions once
@@ -86,14 +69,6 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
     fetch('/api/bosses').then(r => r.json()).then(data => {
       bossesRef.current = {};
       data.forEach(b => { bossesRef.current[b.id] = b; });
-    }).catch(() => {});
-  }, []);
-
-  // Fetch skill definitions once
-  useEffect(() => {
-    api.getSkills().then(data => {
-      skillsRef.current = {};
-      data.forEach(s => { skillsRef.current[s.id] = s; });
     }).catch(() => {});
   }, []);
 
@@ -274,11 +249,6 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
     ? gameState?.players?.[selectedPlayer.id] ?? selectedPlayer
     : null;
 
-  // Resolve owned skill names for selected player
-  const selectedPlayerSkills = liveSelectedPlayer?.ownedSkillIds
-    ?.map(id => skillsRef.current?.[id])
-    .filter(Boolean) || [];
-
   return (
     <div style={styles.container}>
       <div style={styles.header}>
@@ -449,99 +419,9 @@ export function MapScreen({ gameState, myPlayer, fetchState }) {
 
       {/* Player detail overlay */}
       {liveSelectedPlayer && (
-        <div style={styles.overlay} onClick={() => setSelectedPlayer(null)}>
-          <div style={styles.playerDetail} onClick={e => e.stopPropagation()}>
-            {/* Close button */}
-            <button style={styles.closeBtn} onClick={() => setSelectedPlayer(null)}>
-              <LuX size={18} />
-            </button>
-
-            {/* Player header */}
-            <div style={styles.detailHeader}>
-              {(() => {
-                const portrait = PORTRAITS[liveSelectedPlayer.name.toLowerCase()];
-                const ClassIcon = CLASS_ICON_MAP[liveSelectedPlayer.class];
-                return (
-                  <div style={{
-                    ...styles.detailAvatar,
-                    ...(portrait ? {
-                      backgroundImage: `url(${portrait})`,
-                      backgroundSize: 'cover',
-                      backgroundPosition: 'center',
-                    } : {}),
-                  }}>
-                    {!portrait && ClassIcon && <ClassIcon size={24} color="#f5f0e8" />}
-                  </div>
-                );
-              })()}
-              <div>
-                <div style={styles.detailName}>{liveSelectedPlayer.name}</div>
-                <div style={styles.detailClass}>
-                  {liveSelectedPlayer.class} &middot; Lv.{liveSelectedPlayer.level}
-                </div>
-              </div>
-            </div>
-
-            {/* Attributes */}
-            <div style={styles.detailSection}>
-              <div style={styles.detailSectionLabel}>Attributes</div>
-              <div style={styles.attrGrid}>
-                {Object.entries(ATTR_LABELS).map(([key, { name, icon, color }]) => (
-                  <div key={key} style={styles.attrItem}>
-                    <span style={{ ...styles.attrIcon, color }}>{icon}</span>
-                    <span style={styles.attrName}>{name}</span>
-                    <span style={styles.attrVal}>{liveSelectedPlayer.attributes?.[key] ?? 0}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Owned skills */}
-            <div style={styles.detailSection}>
-              <div style={styles.detailSectionLabel}>
-                Skills ({selectedPlayerSkills.length})
-              </div>
-              {selectedPlayerSkills.length === 0 ? (
-                <div style={styles.noSkills}>No skills unlocked yet</div>
-              ) : (
-                <div style={styles.skillList}>
-                  {selectedPlayerSkills.map(skill => (
-                    <div key={skill.id} style={styles.skillItem}>
-                      <span style={{
-                        ...styles.skillDot,
-                        background: skill.type === 'ability' ? '#f59e0b' : '#a855f6',
-                      }} />
-                      <div style={styles.skillInfo}>
-                        <span style={styles.skillName}>{skill.name}</span>
-                        <span style={styles.skillDesc}>{skill.description}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* View Skill Tree button */}
-            <button
-              style={styles.skillTreeBtn}
-              onClick={() => setSkillTreePlayer(liveSelectedPlayer)}
-            >
-              View Skill Tree
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Skill Tree Dialog (read-only) */}
-      {skillTreePlayer && (
-        <SkillTreeDialog
-          open={true}
-          onClose={() => setSkillTreePlayer(null)}
-          characterClass={skillTreePlayer.class}
-          characterLevel={skillTreePlayer.level}
-          ownedSkillIds={skillTreePlayer.ownedSkillIds || []}
-          perkPoints={0}
-          readOnly
+        <PlayerDetailOverlay
+          player={liveSelectedPlayer}
+          onClose={() => setSelectedPlayer(null)}
         />
       )}
     </div>
@@ -801,153 +681,5 @@ const styles = {
     cursor: 'pointer',
     fontFamily: 'Georgia, serif',
     minHeight: '48px',
-  },
-
-  playerDetail: {
-    background: '#2d2418',
-    borderRadius: '16px',
-    border: '2px solid rgba(245,158,11,0.3)',
-    padding: '16px',
-    width: '100%',
-    maxWidth: 360,
-    maxHeight: '80vh',
-    overflowY: 'auto',
-    position: 'relative',
-    boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
-  },
-  closeBtn: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    background: 'transparent',
-    border: 'none',
-    color: '#a8a095',
-    cursor: 'pointer',
-    padding: 4,
-    display: 'flex',
-    minWidth: 44,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  detailHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    marginBottom: '14px',
-  },
-  detailAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: '50%',
-    border: '2px solid rgba(245,158,11,0.4)',
-    background: 'rgba(255,255,255,0.08)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  detailName: {
-    fontSize: '1.1rem',
-    fontWeight: 'bold',
-    color: '#f5f0e8',
-  },
-  detailClass: {
-    fontSize: '0.8rem',
-    color: '#a8a095',
-    textTransform: 'capitalize',
-  },
-  detailSection: {
-    marginBottom: '12px',
-  },
-  detailSectionLabel: {
-    fontSize: '0.7rem',
-    color: '#f59e0b',
-    textTransform: 'uppercase',
-    letterSpacing: '1px',
-    marginBottom: '8px',
-    fontWeight: 'bold',
-  },
-  attrGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '6px',
-  },
-  attrItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    fontSize: '0.8rem',
-    padding: '4px 8px',
-    borderRadius: '6px',
-    background: 'rgba(255,255,255,0.04)',
-  },
-  attrIcon: {
-    fontSize: '0.85rem',
-    flexShrink: 0,
-  },
-  attrName: {
-    color: '#a8a095',
-    flex: 1,
-    fontSize: '0.75rem',
-  },
-  attrVal: {
-    fontWeight: 'bold',
-    color: '#f5f0e8',
-    fontSize: '0.85rem',
-  },
-  noSkills: {
-    fontSize: '0.8rem',
-    color: '#a8a095',
-    fontStyle: 'italic',
-  },
-  skillList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-  },
-  skillItem: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '8px',
-    padding: '6px 8px',
-    borderRadius: '6px',
-    background: 'rgba(255,255,255,0.04)',
-  },
-  skillDot: {
-    width: 8,
-    height: 8,
-    borderRadius: '50%',
-    flexShrink: 0,
-    marginTop: 4,
-  },
-  skillInfo: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1px',
-    minWidth: 0,
-  },
-  skillName: {
-    fontSize: '0.8rem',
-    fontWeight: 'bold',
-    color: '#f5f0e8',
-  },
-  skillDesc: {
-    fontSize: '0.7rem',
-    color: '#a8a095',
-    lineHeight: 1.3,
-  },
-  skillTreeBtn: {
-    width: '100%',
-    padding: '10px',
-    fontSize: '0.85rem',
-    borderRadius: '8px',
-    background: 'transparent',
-    color: '#f59e0b',
-    fontWeight: 'bold',
-    border: '1px solid rgba(245,158,11,0.3)',
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    minHeight: 44,
   },
 };

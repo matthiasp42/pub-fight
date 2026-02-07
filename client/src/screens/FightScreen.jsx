@@ -9,7 +9,7 @@ import { BattleFeedback } from '../components/BattleFeedback.jsx';
 import { BattleWheel } from '../components/BattleWheel.jsx';
 import { ActionPopover } from '../components/ActionPopover.jsx';
 import { GameLog } from '../components/GameLog.jsx';
-import { SkillTreeDialog } from '../components/SkillTreeDialog.jsx';
+import { PlayerDetailOverlay } from '../components/PlayerDetailOverlay.jsx';
 import { EnemyInfoDialog } from '../components/EnemyInfoDialog.jsx';
 import { AdminModal } from '../components/AdminModal.jsx';
 import { buildFightFromServer } from '../game/fightSetup.js';
@@ -27,9 +27,12 @@ import { api } from '../api/client.js';
 // Set to true to use the old ActionPopover dialog instead of inline wheel
 const DEBUG_ACTION_POPOVER = false;
 
-// Timing constants for boss action animations (ms)
+// Timing constants for action animations (ms)
 const IMPACT_DELAY = 1200;  // When damage applies + shake + combat text
 const CLEAR_DELAY = 3600;   // When animation clears and next starts
+// Remote animations play faster — HP bars snap anyway, just need the visual cue
+const REMOTE_IMPACT_DELAY = 600;
+const REMOTE_CLEAR_DELAY = 1800;
 
 /**
  * Collect all consecutive boss/minion turns into an animation queue.
@@ -89,8 +92,7 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
   const [localFight, setLocalFight] = useState(null);
   const [showLog, setShowLog] = useState(false);
   const [pendingAction, setPendingAction] = useState(null);
-  const [skillTreeOpen, setSkillTreeOpen] = useState(false);
-  const [selectedCharacterForSkills, setSelectedCharacterForSkills] = useState(null);
+  const [selectedPlayerForDetail, setSelectedPlayerForDetail] = useState(null);
   const [posting, setPosting] = useState(false);
   const lastFightVersionRef = useRef(-1);
   const initRef = useRef(false);
@@ -176,6 +178,8 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
     // Phase 2: Impact - apply damage, show shake + combat text
     // For remote animations, freeze HP bars — combat text still shows per-action values
     const isRemote = isRemoteAnimRef.current;
+    const impactDelay = isRemote ? REMOTE_IMPACT_DELAY : IMPACT_DELAY;
+    const clearDelay = isRemote ? REMOTE_CLEAR_DELAY : CLEAR_DELAY;
     const t1 = setTimeout(() => {
       if (!isRemote) {
         setLocalFight(current.stateAfterAction);
@@ -185,7 +189,7 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
         .filter(tr => tr.hit !== false)
         .map(tr => tr.targetId);
       setHitTargets(new Set(hitIds));
-    }, IMPACT_DELAY);
+    }, impactDelay);
 
     // Phase 3: Clear animation, advance turn, move to next
     const t2 = setTimeout(() => {
@@ -210,7 +214,7 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
           postToServerRef.current(finalState);
         }
       }
-    }, CLEAR_DELAY);
+    }, clearDelay);
 
     animTimersRef.current = [t1, t2];
   }, [animQueue]);
@@ -228,8 +232,9 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
     }
 
     setIsPlayerAnim(false);
-    finalAnimStateRef.current = finalState;
     setAnimQueue(actions);
+    // Post immediately so other players see the update during our animations
+    postToServer(finalState);
   }, [postToServer]);
 
   // --- Initialize fight state ---
@@ -366,18 +371,19 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
       // Queue player anim, then collect + queue boss anims
       const { actions: bossActions, finalState } = collectBossTurns(stateAfterTurn);
       const allActions = [animAction, ...bossActions];
-      finalAnimStateRef.current = finalState;
       seenLogLenRef.current = finalState.actionLog?.length || 0;
       setIsPlayerAnim(true);
       setPosting(true);
       setAnimQueue(allActions);
+      // Post immediately so other players see the update during our animations
+      postToServerRef.current(finalState);
     } else {
       // Just the player action, then post
-      finalAnimStateRef.current = stateAfterTurn;
       seenLogLenRef.current = stateAfterTurn.actionLog?.length || 0;
       setIsPlayerAnim(true);
       setPosting(true);
       setAnimQueue([animAction]);
+      postToServerRef.current(stateAfterTurn);
     }
   }, []);
 
@@ -571,14 +577,8 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
     fetchState();
   }, [myPlayer?.id, fetchState]);
 
-  const handleOpenSkills = useCallback((character) => {
-    setSelectedCharacterForSkills(character);
-    setSkillTreeOpen(true);
-  }, []);
-
-  const handleCloseSkills = useCallback(() => {
-    setSkillTreeOpen(false);
-    setSelectedCharacterForSkills(null);
+  const handleOpenPlayerDetail = useCallback((character) => {
+    setSelectedPlayerForDetail(character);
   }, []);
 
   const handleCrippleBoss = useCallback(async () => {
@@ -787,7 +787,7 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
                     character={player}
                     isCurrentTurn={currentCharacter?.id === player.id}
                     isEnemy={false}
-                    onClick={isValidTarget ? () => handleTargetSelect(player.id) : () => handleOpenSkills(player)}
+                    onClick={isValidTarget ? () => handleTargetSelect(player.id) : () => handleOpenPlayerDetail(player)}
                     isBeingHit={hitTargets.has(player.id)}
                     isTargetable={isValidTarget}
                   />
@@ -890,17 +890,11 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
       {/* Game Log */}
       <GameLog logs={fightState?.actionLog || []} open={showLog} onToggle={() => setShowLog(!showLog)} />
 
-      {/* Skill Tree Dialog */}
-      {selectedCharacterForSkills && (
-        <SkillTreeDialog
-          open={skillTreeOpen}
-          onClose={handleCloseSkills}
-          characterClass={selectedCharacterForSkills.class}
-          characterLevel={selectedCharacterForSkills.level || 1}
-          ownedSkillIds={selectedCharacterForSkills.ownedSkillIds || []}
-          perkPoints={0}
-          onUnlockSkill={() => {}}
-          readOnly
+      {/* Player Detail Overlay */}
+      {selectedPlayerForDetail && (
+        <PlayerDetailOverlay
+          player={selectedPlayerForDetail}
+          onClose={() => setSelectedPlayerForDetail(null)}
         />
       )}
 
