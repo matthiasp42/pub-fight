@@ -52,6 +52,16 @@ function collectBossTurns(startState) {
     const { newState, result } = executeAction(state, actor.id, action.id);
 
     if (result.success) {
+      newState.actionLog = [...(newState.actionLog || []), {
+        timestamp: Date.now(),
+        type: 'action',
+        actorId: actor.id,
+        actorName: actor.name,
+        actorType: actor.type,
+        actionName: result.actionName,
+        description: `${actor.name} used ${result.actionName}`,
+        actionResult: result,
+      }];
       const stateAfterTurn = advanceTurn(newState);
       actions.push({
         actorId: actor.id,
@@ -59,14 +69,6 @@ function collectBossTurns(startState) {
         actorType: actor.type,
         actionName: result.actionName,
         result,
-        logEntry: {
-          timestamp: Date.now(),
-          type: 'action',
-          stateBefore,
-          stateAfter: newState,
-          actionResult: result,
-          description: `${actor.name} used ${result.actionName}`,
-        },
         stateAfterAction: newState,
         stateAfterTurn,
       });
@@ -84,7 +86,6 @@ function collectBossTurns(startState) {
 export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onCloseAdmin }) {
   const { skills: serverSkills, loading: skillsLoading } = useSkills();
   const [localFight, setLocalFight] = useState(null);
-  const [logs, setLogs] = useState([]);
   const [showLog, setShowLog] = useState(false);
   const [pendingAction, setPendingAction] = useState(null);
   const [skillTreeOpen, setSkillTreeOpen] = useState(false);
@@ -116,7 +117,7 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
   const serverFightVersion = gameState?.fightVersion ?? 0;
   const dungeons = gameState?.dungeons || [];
 
-  // Post final state to server + handle victory
+  // Post final state to server (victory progression now handled by confirm-victory)
   const postToServer = useCallback(async (state) => {
     try {
       const res = await api.postFightState(state, lastFightVersionRef.current);
@@ -127,17 +128,9 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
       console.error('Failed to post fight state:', err);
     }
 
-    if (state.isOver && state.result === 'victory' && activeDungeonId) {
-      try {
-        await api.dungeonCleared(activeDungeonId);
-      } catch (err) {
-        console.error('Failed to report dungeon cleared:', err);
-      }
-    }
-
     setPosting(false);
     fetchState();
-  }, [activeDungeonId, fetchState]);
+  }, [fetchState]);
 
   // Keep ref in sync so timers always call the latest version
   postToServerRef.current = postToServer;
@@ -188,7 +181,6 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
       setShowImpact(false);
       setHitTargets(new Set());
       setLocalFight(current.stateAfterTurn);
-      setLogs(prev => [...prev, current.logEntry]);
 
       animPlayingRef.current = false;
       setAnimQueue(prev => prev.slice(1));
@@ -227,6 +219,7 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
       initRef.current = true;
       try {
         const fight = buildFightFromServer(gameState.players, activeDungeonId, dungeons, serverSkills);
+        fight.actionLog = [{ timestamp: Date.now(), type: 'fight_start', description: 'Fight started!' }];
         setLocalFight(fight);
 
         api.postFightState(fight, 0).then(res => {
@@ -235,14 +228,6 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
           }
           fetchState();
         });
-
-        setLogs([{
-          timestamp: Date.now(),
-          type: 'fight_start',
-          stateBefore: fight,
-          stateAfter: fight,
-          description: 'Fight started!',
-        }]);
       } catch (err) {
         console.error('Failed to build fight:', err);
       }
@@ -256,17 +241,7 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
 
     lastFightVersionRef.current = serverFightVersion;
     setLocalFight(serverFight);
-
-    if (!logs.length) {
-      setLogs([{
-        timestamp: Date.now(),
-        type: 'fight_start',
-        stateBefore: serverFight,
-        stateAfter: serverFight,
-        description: 'Fight loaded from server',
-      }]);
-    }
-  }, [serverFight, serverFightVersion, logs.length]);
+  }, [serverFight, serverFightVersion]);
 
   // Poll for state updates
   useEffect(() => {
@@ -310,14 +285,6 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
   // Feed a player action through the animation queue (same system as boss turns)
   const animatePlayerAction = useCallback((result, stateBefore, newState, actor) => {
     const stateAfterTurn = advanceTurn(newState);
-    const logEntry = {
-      timestamp: Date.now(),
-      type: 'action',
-      stateBefore,
-      stateAfter: newState,
-      actionResult: result,
-      description: `${actor.name} used ${result.actionName}`,
-    };
 
     const animAction = {
       actorId: actor.id,
@@ -325,7 +292,6 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
       actorType: actor.type,
       actionName: result.actionName,
       result,
-      logEntry,
       stateAfterAction: newState,
       stateAfterTurn,
       isPlayerAction: true,
@@ -367,6 +333,18 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
     );
 
     if (!result.success) return;
+
+    // Add to the fight state's action log so it syncs to all clients
+    newState.actionLog = [...(newState.actionLog || []), {
+      timestamp: Date.now(),
+      type: 'action',
+      actorId: currentCharacter.id,
+      actorName: currentCharacter.name,
+      actorType: currentCharacter.type,
+      actionName: result.actionName,
+      description: `${currentCharacter.name} used ${result.actionName}`,
+      actionResult: result,
+    }];
 
     // Old debug flow
     if (DEBUG_ACTION_POPOVER) {
@@ -464,16 +442,7 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
   const handleContinue = useCallback(async () => {
     if (!pendingAction) return;
 
-    const { result, newState, stateBefore, actorName } = pendingAction;
-
-    setLogs(prev => [...prev, {
-      timestamp: Date.now(),
-      type: 'action',
-      stateBefore,
-      stateAfter: newState,
-      actionResult: result,
-      description: `${actorName} used ${result.actionName}`,
-    }]);
+    const { result, newState } = pendingAction;
 
     const stateAfterPlayerTurn = advanceTurn(newState);
     setPendingAction(null);
@@ -504,20 +473,13 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
 
     try {
       const fight = buildFightFromServer(gameState.players, activeDungeonId, dungeons, serverSkills);
+      fight.actionLog = [{ timestamp: Date.now(), type: 'fight_start', description: 'Fight restarted!' }];
       setLocalFight(fight);
 
       const res = await api.postFightState(fight, lastFightVersionRef.current);
       if (res.success) {
         lastFightVersionRef.current = res.fightVersion;
       }
-
-      setLogs([{
-        timestamp: Date.now(),
-        type: 'fight_start',
-        stateBefore: fight,
-        stateAfter: fight,
-        description: 'Fight restarted!',
-      }]);
       setPendingAction(null);
       setPendingWheelAction(null);
       setPendingManualAction(null);
@@ -535,6 +497,16 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
     setPosting(false);
     fetchState();
   }, [activeDungeonId, gameState?.players, dungeons, fetchState]);
+
+  const handleConfirmVictory = useCallback(async () => {
+    if (!myPlayer?.id) return;
+    try {
+      await api.confirmVictory(myPlayer.id);
+    } catch (err) {
+      console.error('Failed to confirm victory:', err);
+    }
+    fetchState();
+  }, [myPlayer?.id, fetchState]);
 
   const handleOpenSkills = useCallback((character) => {
     setSelectedCharacterForSkills(character);
@@ -817,6 +789,9 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
           fightResult={fightState.result}
           onAction={handleAction}
           onRetry={handleRetryFight}
+          onConfirmVictory={handleConfirmVictory}
+          victoryConfirmations={gameState?.victoryConfirmations || []}
+          gamePlayers={gameState?.players || {}}
           posting={posting || isAnimating}
         />
       )}
@@ -850,7 +825,7 @@ export function FightScreen({ gameState, myPlayer, fetchState, showAdmin, onClos
       )}
 
       {/* Game Log */}
-      <GameLog logs={logs} open={showLog} onToggle={() => setShowLog(!showLog)} />
+      <GameLog logs={fightState?.actionLog || []} open={showLog} onToggle={() => setShowLog(!showLog)} />
 
       {/* Skill Tree Dialog */}
       {selectedCharacterForSkills && (

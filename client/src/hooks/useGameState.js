@@ -79,18 +79,44 @@ export function useGameState() {
     }
   }, []);
 
+  const [pollingActive, setPollingActive] = useState(false);
+  const wantPollingRef = useRef(false);
+
   const startPolling = useCallback(() => {
+    wantPollingRef.current = true;
     if (pollingRef.current) clearInterval(pollingRef.current);
     fetchState();
     pollingRef.current = setInterval(fetchState, POLL_INTERVAL);
+    setPollingActive(true);
   }, [fetchState]);
 
   const stopPolling = useCallback(() => {
+    wantPollingRef.current = false;
     if (pollingRef.current) {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
+    setPollingActive(false);
   }, []);
+
+  // Pause polling when tab is hidden, resume when visible
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden) {
+        if (pollingRef.current) {
+          clearInterval(pollingRef.current);
+          pollingRef.current = null;
+          setPollingActive(false);
+        }
+      } else if (wantPollingRef.current) {
+        fetchState();
+        pollingRef.current = setInterval(fetchState, POLL_INTERVAL);
+        setPollingActive(true);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [fetchState]);
 
   useEffect(() => {
     return () => stopPolling();
@@ -121,6 +147,7 @@ export function useGameState() {
   return {
     gameState,
     syncStatus,
+    pollingActive,
     error,
     startPolling,
     stopPolling,

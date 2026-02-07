@@ -115,6 +115,7 @@ export interface GameState {
     fightVersion: number;
     players: Record<string, PlayerCharacter>;
     levelupSnapshots?: Record<string, LevelupSnapshot>;
+    victoryConfirmations: string[];
 }
 export interface GameInstance {
     gameCode: string;

@@ -39,6 +39,7 @@ function createGameInstance(code) {
             fightState: null,
             fightVersion: 0,
             players: {},
+            victoryConfirmations: [],
         },
         dungeons: DUNGEON_DEFINITIONS.map(d => ({ ...d })),
         createdAt: Date.now(),
@@ -219,6 +220,7 @@ app.post('/api/enter-dungeon', requireSession, requireGame, (req, res) => {
     gameState.activeDungeonId = dungeonId;
     gameState.fightState = null;
     gameState.fightVersion = 0;
+    gameState.victoryConfirmations = [];
     gameState.version++;
     res.json({ success: true });
 });
@@ -278,6 +280,61 @@ app.post('/api/dungeon-cleared', requireSession, requireGame, (req, res) => {
     gameState.fightVersion = 0;
     gameState.version++;
     res.json({ success: true });
+});
+// Confirm victory: player taps Continue after winning
+app.post('/api/confirm-victory', requireSession, requireGame, (req, res) => {
+    const { playerId } = req.body;
+    const { gameState } = req.game;
+    if (gameState.phase !== 'fight') {
+        return res.status(400).json({ error: 'Not in fight phase' });
+    }
+    if (!gameState.fightState?.isOver || gameState.fightState?.result !== 'victory') {
+        return res.status(400).json({ error: 'Fight is not a victory' });
+    }
+    if (!playerId || !gameState.players[playerId]) {
+        return res.status(400).json({ error: 'Invalid player' });
+    }
+    // Idempotent: skip if already confirmed
+    if (!gameState.victoryConfirmations.includes(playerId)) {
+        gameState.victoryConfirmations.push(playerId);
+        gameState.version++;
+    }
+    const allConfirmed = Object.keys(gameState.players).every(id => gameState.victoryConfirmations.includes(id));
+    if (allConfirmed) {
+        // Run dungeon-cleared logic
+        const dungeonId = gameState.activeDungeonId;
+        if (!gameState.clearedDungeons.includes(dungeonId)) {
+            gameState.clearedDungeons.push(dungeonId);
+        }
+        // Snapshot before awarding points
+        const snapshots = {};
+        for (const [id, player] of Object.entries(gameState.players)) {
+            snapshots[id] = {
+                attributes: { ...player.attributes },
+                ownedSkillIds: [...player.ownedSkillIds],
+                attributePoints: player.attributePoints,
+                perkPoints: player.perkPoints,
+            };
+        }
+        for (const player of Object.values(gameState.players)) {
+            player.level = gameState.clearedDungeons.length + 1;
+            player.attributePoints += 2;
+            player.perkPoints += 1;
+        }
+        // Save snapshots with the freshly awarded points
+        for (const [id, snap] of Object.entries(snapshots)) {
+            snap.attributePoints = gameState.players[id].attributePoints;
+            snap.perkPoints = gameState.players[id].perkPoints;
+        }
+        gameState.levelupSnapshots = snapshots;
+        gameState.phase = 'levelup';
+        gameState.activeDungeonId = null;
+        gameState.fightState = null;
+        gameState.fightVersion = 0;
+        gameState.victoryConfirmations = [];
+        gameState.version++;
+    }
+    res.json({ success: true, allConfirmed });
 });
 // Distribute attribute points
 app.post('/api/distribute-attributes', requireSession, requireGame, (req, res) => {
@@ -410,7 +467,7 @@ app.post('/api/restore', requireSession, (req, res) => {
         games.set(gameId, game);
     }
     if (version > game.gameState.version) {
-        game.gameState = { version, phase, clearedDungeons, activeDungeonId, fightState, fightVersion, players };
+        game.gameState = { version, phase, clearedDungeons, activeDungeonId, fightState, fightVersion, players, victoryConfirmations: [] };
         touchGame(game);
         sessions.add(req.sessionId);
         res.json({ success: true, restored: true });
@@ -504,6 +561,7 @@ app.post('/api/admin/reset-game', requireSession, requireGame, (req, res) => {
         fightState: null,
         fightVersion: 0,
         players: {},
+        victoryConfirmations: [],
     };
     res.json({ success: true });
 });

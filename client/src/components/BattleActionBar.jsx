@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Box, Typography, Button, Popover } from '@mui/material';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GiSwordWound, GiShield, GiBed, GiScrollUnfurled, GiAura } from 'react-icons/gi';
-import { LuInfo } from 'react-icons/lu';
+import { LuInfo, LuCheck } from 'react-icons/lu';
 import { canExecuteAction, getEffectiveCost } from '../game/engine.js';
 
 /** Map action IDs to RPG icons */
@@ -127,6 +127,9 @@ export function BattleActionBar({
   fightResult,
   onAction,
   onRetry,
+  onConfirmVictory,
+  victoryConfirmations = [],
+  gamePlayers = {},
   posting,
 }) {
   const [infoAnchor, setInfoAnchor] = useState(null);
@@ -165,43 +168,96 @@ export function BattleActionBar({
   // Fight over state
   if (fightOver) {
     const isVictory = fightResult === 'victory';
+    const alreadyConfirmed = victoryConfirmations.includes(myPlayer?.id);
+    const playerList = Object.values(gamePlayers);
+
     return (
       <Box
         sx={{
           ...sheetSx,
           px: 2,
-          py: 2.5,
+          py: 2,
           background: isVictory
             ? 'linear-gradient(0deg, rgba(16, 185, 129, 0.2) 0%, rgba(16, 185, 129, 0.05) 100%)'
             : 'linear-gradient(0deg, rgba(220, 38, 38, 0.2) 0%, rgba(220, 38, 38, 0.05) 100%)',
           borderColor: isVictory ? 'rgba(16, 185, 129, 0.4)' : 'rgba(220, 38, 38, 0.4)',
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'center',
-          gap: 2,
+          gap: 1.5,
           minHeight: 80,
         }}
       >
-        <Typography
-          sx={{
-            color: isVictory ? 'success.main' : 'secondary.main',
-            fontWeight: 800,
-            fontSize: '1.1rem',
-            textShadow: `0 0 10px ${isVictory ? 'rgba(16, 185, 129, 0.5)' : 'rgba(220, 38, 38, 0.5)'}`,
-          }}
-        >
-          {isVictory ? 'VICTORY!' : 'DEFEAT'}
-        </Typography>
-        {!isVictory && (
-          <Button
-            variant="contained"
-            size="small"
-            color="secondary"
-            onClick={onRetry}
-            sx={{ fontWeight: 700, minHeight: 36 }}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Typography
+            sx={{
+              color: isVictory ? 'success.main' : 'secondary.main',
+              fontWeight: 800,
+              fontSize: '1.1rem',
+              textShadow: `0 0 10px ${isVictory ? 'rgba(16, 185, 129, 0.5)' : 'rgba(220, 38, 38, 0.5)'}`,
+            }}
           >
-            Retry
-          </Button>
+            {isVictory ? 'VICTORY!' : 'DEFEAT'}
+          </Typography>
+          {isVictory ? (
+            <Button
+              variant="contained"
+              size="small"
+              color="success"
+              disabled={alreadyConfirmed}
+              onClick={onConfirmVictory}
+              sx={{ fontWeight: 700, minHeight: 36 }}
+            >
+              {alreadyConfirmed ? 'Waiting...' : 'Continue'}
+            </Button>
+          ) : (
+            <Button
+              variant="contained"
+              size="small"
+              color="secondary"
+              onClick={onRetry}
+              sx={{ fontWeight: 700, minHeight: 36 }}
+            >
+              Retry
+            </Button>
+          )}
+        </Box>
+        {isVictory && playerList.length > 1 && (
+          <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', justifyContent: 'center' }}>
+            {playerList.map(p => {
+              const confirmed = victoryConfirmations.includes(p.id);
+              return (
+                <Box key={p.id} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  {confirmed ? (
+                    <LuCheck size={14} color="#10b981" />
+                  ) : (
+                    <motion.div
+                      animate={{ opacity: [0.3, 1, 0.3] }}
+                      transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+                    >
+                      <Box
+                        sx={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: '50%',
+                          backgroundColor: 'primary.main',
+                        }}
+                      />
+                    </motion.div>
+                  )}
+                  <Typography
+                    sx={{
+                      fontSize: '0.7rem',
+                      fontWeight: 600,
+                      color: confirmed ? 'success.main' : 'text.secondary',
+                    }}
+                  >
+                    {p.name}
+                  </Typography>
+                </Box>
+              );
+            })}
+          </Box>
         )}
       </Box>
     );

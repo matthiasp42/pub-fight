@@ -27,19 +27,18 @@ export function GameLog({ logs, open, onToggle }) {
     return date.toLocaleTimeString();
   };
 
-  const getLogColor = (type) => {
-    switch (type) {
-      case 'fight_start':
-        return 'info';
-      case 'action':
-        return 'primary';
-      case 'turn_start':
-        return 'secondary';
-      case 'fight_end':
-        return 'success';
-      default:
-        return 'default';
-    }
+  const getLogColor = (log) => {
+    if (log.type === 'fight_start') return 'info';
+    if (log.type === 'fight_end') return 'success';
+    if (log.actorType === 'boss' || log.actorType === 'minion') return 'secondary';
+    return 'primary';
+  };
+
+  const getLogLabel = (log) => {
+    if (log.type !== 'action') return log.type;
+    if (log.actorType === 'boss') return 'boss';
+    if (log.actorType === 'minion') return 'minion';
+    return 'action';
   };
 
   return (
@@ -85,9 +84,9 @@ export function GameLog({ logs, open, onToggle }) {
                 <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ color: '#fff' }} />}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
                     <Chip
-                      label={log.type}
+                      label={getLogLabel(log)}
                       size="small"
-                      color={getLogColor(log.type)}
+                      color={getLogColor(log)}
                       sx={{ minWidth: 80 }}
                     />
                     <Typography variant="body2" sx={{ flex: 1 }}>
@@ -121,35 +120,35 @@ export function GameLog({ logs, open, onToggle }) {
                       </Box>
                     )}
 
-                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
-                      State After:
-                    </Typography>
-                    <Box
-                      component="pre"
-                      sx={{
-                        backgroundColor: '#1a1a1a',
-                        p: 1,
-                        borderRadius: 1,
-                        overflow: 'auto',
-                        fontSize: '0.7rem',
-                        maxHeight: 300,
-                      }}
-                    >
-                      {JSON.stringify(
-                        {
-                          characters: log.stateAfter.characters.map((c) => ({
-                            name: c.name,
-                            type: c.type,
-                            state: c.state,
-                          })),
-                          currentTurnIndex: log.stateAfter.currentTurnIndex,
-                          isOver: log.stateAfter.isOver,
-                          result: log.stateAfter.result,
-                        },
-                        null,
-                        2
-                      )}
-                    </Box>
+                    {log.actionResult?.targetResults?.length > 0 && (
+                      <Box sx={{ mt: 1 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
+                          Targets:
+                        </Typography>
+                        <Box
+                          component="pre"
+                          sx={{
+                            backgroundColor: '#1a1a1a',
+                            p: 1,
+                            borderRadius: 1,
+                            overflow: 'auto',
+                            fontSize: '0.7rem',
+                            maxHeight: 200,
+                          }}
+                        >
+                          {JSON.stringify(
+                            log.actionResult.targetResults.map(tr => ({
+                              target: tr.targetName,
+                              damage: tr.damage,
+                              healing: tr.healing,
+                              hit: tr.hit,
+                            })),
+                            null,
+                            2
+                          )}
+                        </Box>
+                      </Box>
+                    )}
                   </Box>
                 </AccordionDetails>
               </Accordion>

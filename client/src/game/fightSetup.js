@@ -226,6 +226,7 @@ export function buildFightFromServer(serverPlayers, dungeonId, dungeons, serverS
     currentTurnIndex: 0,
     isOver: false,
     result: 'ongoing',
+    actionLog: [],
   };
 }
 

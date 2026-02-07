@@ -33,6 +33,10 @@ async function handleGameResponse(res) {
     if (body.code === 'GAME_NOT_FOUND') throw new GameNotFoundError();
     return body;
   }
+  if (res.status === 409) {
+    const body = await res.json();
+    return { success: false, conflict: true, ...body };
+  }
   return res.json();
 }
 
@@ -142,6 +146,15 @@ export const api = {
       method: 'POST',
       headers: gameHeaders(),
       body: JSON.stringify({ dungeonId })
+    });
+    return handleGameResponse(res);
+  },
+
+  async confirmVictory(playerId) {
+    const res = await fetch(`${API_BASE}/confirm-victory`, {
+      method: 'POST',
+      headers: gameHeaders(),
+      body: JSON.stringify({ playerId })
     });
     return handleGameResponse(res);
   },

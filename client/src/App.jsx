@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ThemeProvider, CssBaseline, IconButton, Menu, MenuItem, ListItemIcon, ListItemText, Divider, Typography } from '@mui/material';
+import { ThemeProvider, CssBaseline, IconButton, Menu, MenuItem, ListItemIcon, ListItemText, Divider, Typography, Box } from '@mui/material';
 import { LuSettings, LuLogOut, LuShield, LuUsers } from 'react-icons/lu';
 import theme from './theme';
 import { LoginScreen } from './screens/LoginScreen';
@@ -21,7 +21,7 @@ function App() {
   const [settingsAnchor, setSettingsAnchor] = useState(null);
   const [showAdmin, setShowAdmin] = useState(false);
   const [showParty, setShowParty] = useState(false);
-  const { gameState, syncStatus, startPolling, stopPolling, fetchState, resetState } = useGameState();
+  const { gameState, syncStatus, pollingActive, startPolling, stopPolling, fetchState, resetState } = useGameState();
 
   useEffect(() => {
     const sessionId = localStorage.getItem('sessionId');
@@ -83,10 +83,7 @@ function App() {
     if (playerId) {
       api.release(playerId).catch(() => {});
     }
-    localStorage.removeItem('sessionId');
-    localStorage.removeItem('gameId');
-    localStorage.removeItem('myPlayerId');
-    localStorage.removeItem('pubfight_gameState');
+    localStorage.clear();
     setLoggedIn(false);
     setGameId(null);
     setMyPlayerId(null);
@@ -243,6 +240,28 @@ function App() {
                     Game: {gameId}
                   </Typography>
                 </ListItemText>
+              </MenuItem>
+            )}
+            {gameId && (
+              <MenuItem disabled sx={{ opacity: '0.7 !important', minHeight: 32 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Box sx={{
+                    width: 8, height: 8, borderRadius: '50%',
+                    bgcolor: syncStatus === 'synced'
+                      ? (pollingActive ? 'success.main' : 'primary.main')
+                      : syncStatus === 'disconnected' ? 'secondary.main'
+                      : syncStatus === 'restoring' ? 'primary.main'
+                      : 'text.secondary',
+                    boxShadow: syncStatus === 'synced' && pollingActive ? '0 0 6px #10b981' : 'none',
+                  }} />
+                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    {syncStatus === 'synced' ? (pollingActive ? 'Connected' : 'Paused')
+                      : syncStatus === 'disconnected' ? 'Disconnected'
+                      : syncStatus === 'restoring' ? 'Restoring...'
+                      : syncStatus === 'game_not_found' ? 'Game lost'
+                      : 'Connecting...'}
+                  </Typography>
+                </Box>
               </MenuItem>
             )}
             {gameId && <Divider />}
